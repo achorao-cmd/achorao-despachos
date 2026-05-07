@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const GOOGLE_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbwTfs6t_uQkt9wZ993uv9oMyAauI0pJqBhb0I8ruSkFystKj8IuaIp1tAg-2qvpWPDrEA/exec";
+  "https://script.google.com/macros/s/AKfycbxhNBkssonVACbSDoNk0Ofxvm6b8rjvRVbkfysllRcgZ8Spx2UHTMEzpxEGWrchQgv5Sg/exec";
 
 const USUARIOS = [
   { nombre: "Anto", pin: "1111" },
@@ -9,6 +9,7 @@ const USUARIOS = [
   { nombre: "Elias", pin: "3333" },
 ];
 
+const ESTADOS = ["Empaquetado", "En ruta", "En Shalom", "Entregado", "No entregado", "Reprogramado"];
 const TIEMPO_INACTIVIDAD = 5 * 60 * 1000;
 
 export default function App() {
@@ -17,7 +18,14 @@ export default function App() {
   const [pin, setPin] = useState("");
 
   const [pedido, setPedido] = useState("");
-  const [estado, setEstado] = useState("En ruta");
+  const [estado, setEstado] = useState("Empaquetado");
+  const [agencia, setAgencia] = useState("");
+  const [codigoRecojo, setCodigoRecojo] = useState("1639");
+  const [voucherURL, setVoucherURL] = useState("");
+  const [voucherBase64, setVoucherBase64] = useState("");
+  const [voucherNombre, setVoucherNombre] = useState("");
+  const [observacion, setObservacion] = useState("");
+
   const [registros, setRegistros] = useState([]);
   const [busqueda, setBusqueda] = useState("");
   const [mensaje, setMensaje] = useState("");
@@ -25,6 +33,8 @@ export default function App() {
 
   const timerRef = useRef(null);
   const inputRef = useRef(null);
+
+  const esShalom = estado === "En Shalom";
 
   const cerrarSesion = () => {
     setUsuarioActivo(null);
@@ -60,12 +70,10 @@ export default function App() {
     setPin("");
     setMensaje(`✅ Sesión iniciada: ${usuario.nombre}`);
 
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 100);
+    setTimeout(() => inputRef.current?.focus(), 100);
   };
 
-  const contadorMotorizado = useMemo(() => {
+  const contadorUsuario = useMemo(() => {
     return registros.filter((r) => r.motorizado === usuarioActivo).length;
   }, [registros, usuarioActivo]);
 
@@ -73,27 +81,70 @@ export default function App() {
     r.pedido.toLowerCase().includes(busqueda.toLowerCase())
   );
 
+  const limpiarCampos = () => {
+    setPedido("");
+    setAgencia("");
+    setCodigoRecojo("1639");
+    setVoucherURL("");
+    setVoucherBase64("");
+    setVoucherNombre("");
+    setObservacion("");
+  };
+
+  const cargarVoucher = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      setVoucherBase64(reader.result);
+      setVoucherNombre(file.name);
+      setMensaje(`📷 Voucher cargado: ${file.name}`);
+    };
+
+    reader.readAsDataURL(file);
+  };
+
   const registrar = async (e) => {
     e.preventDefault();
     reiniciarTimer();
 
     const pedidoLimpio = pedido.trim().toUpperCase();
-    if (!pedidoLimpio || !usuarioActivo) return;
+    if (!pedidoLimpio || !usuarioActivo || !estado) return;
 
-    const duplicado = registros.some((r) => r.pedido === pedidoLimpio);
+    const duplicado = registros.some(
+      (r) => r.pedido === pedidoLimpio && r.estado === estado
+    );
 
     if (duplicado) {
-      setMensaje(`⚠️ El pedido ${pedidoLimpio} ya fue registrado`);
+      setMensaje(`⚠️ ${pedidoLimpio} ya fue registrado como "${estado}"`);
       setPedido("");
       return;
     }
+
+    if (esShalom && !codigoRecojo.trim()) {
+      setMensaje("⚠️ Falta el código de recojo");
+      return;
+    }
+
+    const now = new Date();
 
     const nuevoRegistro = {
       pedido: pedidoLimpio,
       motorizado: usuarioActivo,
       estado,
-      hora: new Date().toLocaleTimeString("es-PE"),
-      fecha: new Date().toLocaleDateString("es-PE"),
+      hora: now.toLocaleTimeString("es-PE"),
+      fecha: now.toLocaleDateString("es-PE"),
+      etapa: estado,
+      agencia: agencia.trim(),
+      codigoRecojo: codigoRecojo.trim(),
+      voucherURL: voucherURL.trim(),
+      voucherBase64,
+      voucherNombre: voucherNombre
+        ? `${pedidoLimpio}_${usuarioActivo}_${voucherNombre}`
+        : "",
+      observacion: observacion.trim(),
     };
 
     setGuardando(true);
@@ -106,8 +157,8 @@ export default function App() {
       });
 
       setRegistros([nuevoRegistro, ...registros]);
-      setMensaje(`✅ ${pedidoLimpio} guardado con ${usuarioActivo}`);
-      setPedido("");
+      setMensaje(`✅ ${pedidoLimpio} guardado como "${estado}"`);
+      limpiarCampos();
     } catch (error) {
       console.error(error);
       setMensaje("❌ Error al guardar en Google Sheets");
@@ -159,7 +210,7 @@ export default function App() {
   return (
     <div style={styles.page} onClick={reiniciarTimer} onKeyDown={reiniciarTimer}>
       <div style={styles.card}>
-        <h1 style={styles.title}>📦 Despacho Achorao</h1>
+        <h1 style={styles.title}>📦 Tracking Achorao</h1>
 
         <div style={styles.stats}>
           <div>
@@ -167,7 +218,7 @@ export default function App() {
             <span>Total sesión</span>
           </div>
           <div>
-            <strong>{contadorMotorizado}</strong>
+            <strong>{contadorUsuario}</strong>
             <span>{usuarioActivo}</span>
           </div>
         </div>
@@ -179,16 +230,15 @@ export default function App() {
           </button>
         </div>
 
-        <label style={styles.label}>Estado</label>
+        <label style={styles.label}>Etapa / Estado</label>
         <select
           value={estado}
           onChange={(e) => setEstado(e.target.value)}
           style={styles.select}
         >
-          <option>En ruta</option>
-          <option>Entregado</option>
-          <option>No entregado</option>
-          <option>Reprogramado</option>
+          {ESTADOS.map((e) => (
+            <option key={e}>{e}</option>
+          ))}
         </select>
 
         <form onSubmit={registrar} style={styles.form}>
@@ -196,10 +246,59 @@ export default function App() {
             ref={inputRef}
             value={pedido}
             onChange={(e) => setPedido(e.target.value)}
-            placeholder="Escanea o escribe #15697"
+            placeholder="Escanea o escribe #15727"
             autoFocus
             style={styles.input}
           />
+
+          {esShalom && (
+            <>
+              <input
+                value={agencia}
+                onChange={(e) => setAgencia(e.target.value)}
+                placeholder="Agencia Shalom / Marvisur"
+                style={styles.inputSmall}
+              />
+
+              <input
+                value={codigoRecojo}
+                onChange={(e) => setCodigoRecojo(e.target.value)}
+                placeholder="Código de recojo"
+                style={styles.inputSmall}
+              />
+
+              <label style={styles.uploadButton}>
+                📷 Tomar/subir voucher
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={cargarVoucher}
+                  style={{ display: "none" }}
+                />
+              </label>
+
+              {voucherNombre && (
+                <div style={styles.fileOk}>
+                  ✅ Voucher listo: {voucherNombre}
+                </div>
+              )}
+
+              <input
+                value={voucherURL}
+                onChange={(e) => setVoucherURL(e.target.value)}
+                placeholder="Link manual del voucher en Drive (opcional)"
+                style={styles.inputSmall}
+              />
+
+              <input
+                value={observacion}
+                onChange={(e) => setObservacion(e.target.value)}
+                placeholder="Observación opcional"
+                style={styles.inputSmall}
+              />
+            </>
+          )}
 
           <button disabled={guardando} style={styles.bigButton}>
             {guardando ? "Guardando..." : "REGISTRAR"}
@@ -252,7 +351,7 @@ const styles = {
     textAlign: "center",
   },
   title: {
-    fontSize: 42,
+    fontSize: 38,
     marginBottom: 20,
   },
   stats: {
@@ -296,6 +395,34 @@ const styles = {
     borderRadius: 8,
     boxSizing: "border-box",
     marginBottom: 12,
+  },
+  inputSmall: {
+    width: "100%",
+    padding: 14,
+    fontSize: 16,
+    borderRadius: 8,
+    boxSizing: "border-box",
+    marginBottom: 10,
+  },
+  uploadButton: {
+    display: "block",
+    width: "100%",
+    padding: 16,
+    fontSize: 18,
+    fontWeight: "bold",
+    borderRadius: 8,
+    boxSizing: "border-box",
+    marginBottom: 10,
+    background: "#2d7dff",
+    color: "#fff",
+    cursor: "pointer",
+  },
+  fileOk: {
+    background: "#14351f",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+    fontWeight: "bold",
   },
   bigButton: {
     width: "100%",
