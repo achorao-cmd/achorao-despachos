@@ -233,6 +233,25 @@ function PanelAdmin() {
     return coincideBusqueda && coincideMotorizado && coincideEstado;
   });
 
+  const registrosActuales = Object.values(
+  filtrados.reduce((acc, r) => {
+    const pedidoKey = String(r.pedido || "").trim();
+
+    if (!pedidoKey) return acc;
+
+    const fechaActual = new Date(r.registroReal || `${r.fecha} ${r.hora}`);
+    const fechaGuardada = acc[pedidoKey]
+      ? new Date(acc[pedidoKey].registroReal || `${acc[pedidoKey].fecha} ${acc[pedidoKey].hora}`)
+      : null;
+
+    if (!acc[pedidoKey] || fechaActual > fechaGuardada) {
+      acc[pedidoKey] = r;
+    }
+
+    return acc;
+  }, {})
+);
+
   return (
     <div style={styles.page}>
       <div style={styles.card}>
@@ -280,10 +299,10 @@ function PanelAdmin() {
           <p>Cargando registros...</p>
         ) : (
           <>
-            <h3>Registros de hoy: {filtrados.length}</h3>
+            <h3>Pedidos actuales: {registrosActuales.length}</h3>
 
             <div style={styles.list}>
-              {filtrados.map((r, i) => (
+              {registrosActuales.map((r, i) => (
                 <div key={i} style={styles.item}>
                   <strong style={styles.adminPedido}>
                     {String(r.pedido || "").slice(0, 18)}
