@@ -303,13 +303,23 @@ function PanelAdmin() {
 
             <div style={styles.list}>
               {registrosActuales.map((r, i) => (
-                <div key={i} style={styles.item}>
-                  <strong style={styles.adminPedido}>
-                    {String(r.pedido || "").slice(0, 18)}
-                  </strong>
-                  <span>{r.motorizado}</span>
-                  <span>{r.estado}</span>
-                  <small>{r.hora}</small>
+                <div key={i} style={styles.adminItem}>
+                  <div style={styles.adminTop}>
+                    <strong style={styles.adminPedido}>Pedido: {String(r.pedido || "").slice(0, 18)}</strong>
+                    <span style={styles.adminEstado}>{r.estado}</span>
+                  </div>
+
+                  <div style={styles.adminMeta}>
+                    <span>Motorizado: {r.motorizado || "-"}</span>
+                    <span>Hora: {r.hora || "-"}</span>
+                  </div>
+
+                  {r.agencia && (
+                    <div style={styles.adminMeta}>
+                      <span>Agencia: {r.agencia}</span>
+                      {r.codigoRecojo && <span>Código: {r.codigoRecojo}</span>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1106,6 +1116,7 @@ const styles = {
     borderRadius: 8,
     fontWeight: "bold",
   },
+  
   search: {
     width: "100%",
     padding: 14,
@@ -1114,6 +1125,7 @@ const styles = {
     boxSizing: "border-box",
     marginTop: 24,
   },
+
   list: {
     display: "grid",
     gap: 8,
@@ -1121,6 +1133,7 @@ const styles = {
     maxWidth: "100%",
     overflowX: "hidden",
   },
+
   item: {
     background: "#1d1f27",
     padding: 10,
@@ -1134,11 +1147,13 @@ const styles = {
     maxWidth: "100%",
     boxSizing: "border-box",
   },
+
   timeline: {
     display: "grid",
     gap: 16,
     marginTop: 20,
   },
+
   timelineItem: {
     display: "grid",
     gridTemplateColumns: "42px 1fr",
@@ -1147,6 +1162,7 @@ const styles = {
     padding: 16,
     borderRadius: 12,
   },
+
   dot: {
     width: 34,
     height: 34,
@@ -1158,12 +1174,14 @@ const styles = {
     justifyContent: "center",
     fontWeight: "bold",
   },
+
   link: {
     display: "inline-block",
     marginTop: 6,
     color: "#7db4ff",
     fontWeight: "bold",
   },
+
   alertBox: {
     marginTop: 20,
     padding: 18,
@@ -1172,6 +1190,7 @@ const styles = {
     borderRadius: 12,
     textAlign: "center",
   },
+
   miniButton: {
     padding: "8px 10px",
     borderRadius: 8,
@@ -1181,30 +1200,34 @@ const styles = {
     fontWeight: "bold",
     cursor: "pointer",
   },
+
   cameraButton: {
-  width: 60,
-  borderRadius: 10,
-  border: "none",
-  background: "#333",
-  color: "#fff",
-  fontSize: 22,
-  cursor: "pointer",
+    width: 60,
+    borderRadius: 10,
+    border: "none",
+    background: "#333",
+    color: "#fff",
+    fontSize: 22,
+    cursor: "pointer",
   },
+
   scannerOverlay: {
-  position: "fixed",
-  inset: 0,
-  background: "#000",
-  zIndex: 9999,
-  padding: 12,
-  boxSizing: "border-box",
-  overflow: "auto",
+    position: "fixed",
+    inset: 0,
+    background: "#000",
+    zIndex: 9999,
+    padding: 12,
+    boxSizing: "border-box",
+    overflow: "auto",
   },
+
   scannerBox: {
     width: "100%",
     maxWidth: 520,
     margin: "0 auto",
   },
-    sendButton: {
+
+  sendButton: {
     width: "58px",
     border: "none",
     borderRadius: "10px",
@@ -1214,10 +1237,53 @@ const styles = {
     fontWeight: "bold",
     cursor: "pointer",
   },
+
   adminPedido: {
     maxWidth: 180,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+  },
+
+  adminItem: {
+  background: "#1b1d26",
+  borderRadius: 14,
+  padding: 16,
+  marginBottom: 10,
+  border: "1px solid rgba(255,255,255,0.08)",
+  },
+
+  adminTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+
+  adminPedido: {
+    fontSize: 16,
+    fontWeight: 900,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+
+  adminEstado: {
+    background: "#2d2d2d",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 13,
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  },
+
+  adminMeta: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 10,
+    fontSize: 14,
+    opacity: 0.85,
+    marginTop: 6,
   },
 };
