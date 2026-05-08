@@ -1,3 +1,4 @@
+import { Html5QrcodeScanner } from "html5-qrcode";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const GOOGLE_SCRIPT_URL =
@@ -9,24 +10,324 @@ const USUARIOS = [
   { nombre: "Elias", pin: "3333" },
 ];
 
-const ESTADOS = ["Empaquetado", "En ruta", "En Shalom", "Entregado", "No entregado", "Reprogramado"];
+const ESTADOS_MOTORIZADO = ["Empaquetado", "En ruta", "Entregado", "No entregado", "Reprogramado"];
+const ESTADOS_AGENCIA = ["Empaquetado", "En agencia"];
 const TIEMPO_INACTIVIDAD = 5 * 60 * 1000;
 
 export default function App() {
+  const ruta = window.location.pathname;
+
+  if (ruta === "/tracking") return <TrackingCliente />;
+  if (ruta === "/admin") return <PanelAdmin />;
+
+  return <AppInterna />;
+}
+
+function TrackingCliente() {
+  const [pedido, setPedido] = useState("");
+  const [resultado, setResultado] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [mensaje, setMensaje] = useState("");
+  const [scannerActivo, setScannerActivo] = useState(false);
+
+  const buscarPedido = async (e) => {
+    e.preventDefault();
+
+    const pedidoLimpio = pedido.replace("#", "").trim().toUpperCase();
+
+    if (!pedidoLimpio) {
+      setMensaje("Escribe tu número de pedido.");
+      return;
+    }
+
+    setCargando(true);
+    setMensaje("");
+    setResultado(null);
+
+    try {
+      const res = await fetch(`${GOOGLE_SCRIPT_URL}?pedido=${pedidoLimpio}`);
+      const data = await res.json();
+
+      if (!data.encontrado) {
+        setMensaje("No encontramos ese pedido todavía. Revisa el número o intenta más tarde.");
+      } else {
+        setResultado(data);
+      }
+    } catch (error) {
+      console.error(error);
+      setMensaje("No pudimos consultar el pedido.");
+    }
+
+    setCargando(false);
+  };
+
+  const eventos = resultado?.eventos || [];
+  const tieneAgencia = eventos.some((e) => e.estado === "En agencia");
+
+  const PASOS = tieneAgencia
+    ? [
+        { key: "Empaquetado", titulo: "📦 Empaquetado", desc: "Tu pedido ya fue preparado." },
+        { key: "En ruta", titulo: "🚚 En camino a agencia", desc: "Estamos llevando tu pedido a la agencia." },
+        { key: "En agencia", titulo: "🏢 En agencia", desc: "Tu pedido ya fue dejado en agencia. Desde aquí continúa con el operador." },
+      ]
+    : [
+        { key: "Empaquetado", titulo: "📦 Empaquetado", desc: "Tu pedido ya fue preparado." },
+        { key: "En ruta", titulo: "🚚 En ruta", desc: "Tu pedido salió con nuestro equipo." },
+        { key: "Entregado", titulo: "✅ Entregado", desc: "Pedido entregado correctamente." },
+      ];
+
+  const estadosActivos = eventos.map((e) => e.estado);
+  const obtenerEvento = (estado) => eventos.find((e) => e.estado === estado);
+
+    return (
+      <div style={styles.page}>
+      <div style={styles.card}>
+        <h1 style={styles.title}>📦 Rastrea tu pedido</h1>
+
+        <p style={{ opacity: 0.8 }}>Ingresa tu número de pedido Achorao.</p>
+
+        <form onSubmit={buscarPedido}>
+          <input
+            value={pedido}
+            onChange={(e) => setPedido(e.target.value)}
+            placeholder="Ej: 15727"
+            style={styles.input}
+            autoFocus
+          />
+
+          <button style={styles.bigButton}>
+            {cargando ? "Buscando..." : "BUSCAR PEDIDO"}
+          </button>
+        </form>
+
+        {mensaje && <div style={styles.message}>{mensaje}</div>}
+
+        {resultado && (
+          <div style={{ marginTop: 30 }}>
+            <h2 style={{ marginBottom: 24 }}>Pedido #{resultado.pedido}</h2>
+
+            <div style={styles.timeline}>
+              {PASOS.map((paso, i) => {
+                const activo = estadosActivos.includes(paso.key);
+                const evento = obtenerEvento(paso.key);
+                const agenciaTexto = String(evento?.agencia || "").toLowerCase();
+                const esMarvisur = agenciaTexto.includes("marvisur");
+
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      ...styles.timelineItem,
+                      opacity: activo ? 1 : 0.35,
+                      border: activo ? "1px solid #ff7a00" : "1px solid #2b2b2b",
+                    }}
+                  >
+                    <div
+                      style={{
+                        ...styles.dot,
+                        background: activo ? "#ff7a00" : "#3b3b3b",
+                      }}
+                    >
+                      {activo ? "✓" : "•"}
+                    </div>
+
+                    <div style={{ flex: 1 }}>
+                      <strong style={{ fontSize: 20, display: "block", marginBottom: 4 }}>
+                        {paso.titulo}
+                      </strong>
+
+                      <p style={{ margin: "0 0 10px", opacity: 0.8 }}>{paso.desc}</p>
+
+                      {evento && (
+                        <>
+                          <div style={{ fontSize: 14, opacity: 0.7, marginBottom: 6 }}>
+                            {evento.fecha} · {evento.hora}
+                          </div>
+
+                          {evento.agencia && (
+                            <div style={{ marginBottom: 6 }}>
+                              Agencia: <strong>{evento.agencia}</strong>
+                            </div>
+                          )}
+
+                          {evento.codigoRecojo && evento.estado === "En Shalom" && (
+                            <div style={{ background: "#1d1f27", padding: 10, borderRadius: 10, marginTop: 10 }}>
+                              Código de recojo:
+                              <div style={{ fontSize: 30, fontWeight: "bold", color: "#ff7a00", marginTop: 6 }}>
+                                {evento.codigoRecojo}
+                              </div>
+                            </div>
+                          )}
+
+                          {evento.estado === "En Shalom" && (
+                            <a
+                              href={esMarvisur ? "https://www.marvisur.com/" : "https://rastrea.shalom.pe/"}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                color: "#ff8a00",
+                                fontWeight: "bold",
+                                display: "block",
+                                marginTop: 12,
+                                textDecoration: "none",
+                              }}
+                            >
+                              {esMarvisur ? "Rastrear en Marvisur →" : "Rastrear en Shalom →"}
+                            </a>
+                          )}
+
+                          {evento.voucherURL && (
+                            <a href={evento.voucherURL} target="_blank" rel="noreferrer" style={styles.link}>
+                              Ver voucher
+                            </a>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+function PanelAdmin() {
+  const [registros, setRegistros] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [busqueda, setBusqueda] = useState("");
+  const [filtroMotorizado, setFiltroMotorizado] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("");
+
+  const cargarAdmin = async () => {
+    setCargando(true);
+    try {
+      const res = await fetch(`${GOOGLE_SCRIPT_URL}?modo=admin`);
+      const data = await res.json();
+
+      if (data.ok) {
+        setRegistros(data.registros || []);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+
+    setCargando(false);
+  };
+
+  useEffect(() => {
+    cargarAdmin();
+  }, []);
+
+  const filtrados = registros.filter((r) => {
+    const texto = `${r.pedido} ${r.motorizado} ${r.estado} ${r.agencia}`.toLowerCase();
+
+    const coincideBusqueda = texto.includes(busqueda.toLowerCase());
+    const coincideMotorizado = !filtroMotorizado || r.motorizado === filtroMotorizado;
+    const coincideEstado = !filtroEstado || r.estado === filtroEstado;
+
+    return coincideBusqueda && coincideMotorizado && coincideEstado;
+  });
+
+  return (
+    <div style={styles.page}>
+      <div style={styles.card}>
+        <h1 style={styles.title}>📊 Panel Admin</h1>
+
+        <button onClick={cargarAdmin} style={styles.bigButton} disabled={cargando}>
+          {cargando ? "Actualizando..." : "Actualizar"}
+        </button>
+
+        <input
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="Buscar pedido, motorizado, estado..."
+          style={styles.search}
+        />
+
+        <select
+          value={filtroMotorizado}
+          onChange={(e) => setFiltroMotorizado(e.target.value)}
+          style={styles.select}
+        >
+          <option value="">Todos los motorizados</option>
+          {USUARIOS.map((u) => (
+            <option key={u.nombre} value={u.nombre}>
+              {u.nombre}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={filtroEstado}
+          onChange={(e) => setFiltroEstado(e.target.value)}
+          style={styles.select}
+        >
+          <option value="">Todos los estados</option>
+          <option value="Empaquetado">Empaquetado</option>
+          <option value="En ruta">En ruta</option>
+          <option value="En agencia">En agencia</option>
+          <option value="Entregado">Entregado</option>
+          <option value="No entregado">No entregado</option>
+          <option value="Reprogramado">Reprogramado</option>
+        </select>
+
+        {cargando ? (
+          <p>Cargando registros...</p>
+        ) : (
+          <>
+            <h3>Registros de hoy: {filtrados.length}</h3>
+
+            <div style={styles.list}>
+              {filtrados.map((r, i) => (
+                <div key={i} style={styles.item}>
+                  <strong>{r.pedido}</strong>
+                  <span>{r.motorizado}</span>
+                  <span>{r.estado}</span>
+                  <small>{r.hora}</small>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AppInterna() {
   const [usuarioActivo, setUsuarioActivo] = useState(null);
   const [usuarioLogin, setUsuarioLogin] = useState("Anto");
   const [pin, setPin] = useState("");
 
   const [pedido, setPedido] = useState("");
   const [estado, setEstado] = useState("Empaquetado");
+  const [tipoEnvio, setTipoEnvio] = useState("Motorizado");
   const [agencia, setAgencia] = useState("");
-  const [codigoRecojo, setCodigoRecojo] = useState("1639");
+  const [codigoRecojo, setCodigoRecojo] = useState("");
   const [voucherURL, setVoucherURL] = useState("");
   const [voucherBase64, setVoucherBase64] = useState("");
   const [voucherNombre, setVoucherNombre] = useState("");
   const [observacion, setObservacion] = useState("");
+  const [scannerActivo, setScannerActivo] = useState(false);
 
   const [registros, setRegistros] = useState([]);
+  const cargarHistorialDia = async (usuario) => {
+    try {
+      const res = await fetch(
+        `${GOOGLE_SCRIPT_URL}?modo=interno&usuario=${encodeURIComponent(usuario)}`
+      );
+      const data = await res.json();
+
+      if (data.ok) {
+        setRegistros(data.registros || []);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
   const [busqueda, setBusqueda] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [guardando, setGuardando] = useState(false);
@@ -34,7 +335,58 @@ export default function App() {
   const timerRef = useRef(null);
   const inputRef = useRef(null);
 
-  const esShalom = estado === "En Shalom";
+  const esAgencia = estado === "En agencia";
+  const requiereFoto = ["Entregado", "En agencia", "Reprogramado"].includes(estado);
+
+  const requiereObservacion = ["No entregado", "Reprogramado"].includes(estado);
+  const horaActual = new Date().getHours();
+  const puedeEmpaquetar = horaActual < 17;
+
+  const estadosDisponibles = (
+    tipoEnvio === "Agencia" ? ESTADOS_AGENCIA : ESTADOS_MOTORIZADO
+    ).filter((e) => puedeEmpaquetar || e !== "Empaquetado");
+    const ORDEN_ESTADOS = {
+    Empaquetado: 1,
+    "En ruta": 2,
+    "En agencia": 2,
+    Entregado: 3,
+    "No entregado": 3,
+    Reprogramado: 3,
+  };
+
+  const ultimoEstadoPedido = (pedidoBuscado) => {
+    const pedidoLimpio = String(pedidoBuscado || "").trim().toUpperCase();
+
+    const eventos = registros.filter(
+      (r) => String(r.pedido || "").trim().toUpperCase() === pedidoLimpio
+    );
+
+    if (eventos.length === 0) return "";
+
+    return eventos.reduce((ultimo, actual) => {
+      const ordenActual = ORDEN_ESTADOS[actual.estado] || 0;
+      const ordenUltimo = ORDEN_ESTADOS[ultimo.estado] || 0;
+
+      return ordenActual > ordenUltimo ? actual : ultimo;
+    }).estado;
+  };
+
+  const esRetroceso = (pedidoBuscado, nuevoEstado) => {
+    const ultimo = ultimoEstadoPedido(pedidoBuscado);
+    if (!ultimo) return false;
+
+    return (ORDEN_ESTADOS[nuevoEstado] || 0) < (ORDEN_ESTADOS[ultimo] || 0);
+  };
+  useEffect(() => {
+
+  if (estado !== "En agencia") {
+    setAgencia("");
+    setCodigoRecojo("");
+    setVoucherURL("");
+    setVoucherBase64("");
+    setVoucherNombre("");
+  }
+}, [estado]);
 
   const cerrarSesion = () => {
     setUsuarioActivo(null);
@@ -67,6 +419,7 @@ export default function App() {
     }
 
     setUsuarioActivo(usuario.nombre);
+    cargarHistorialDia(usuario.nombre);
     setPin("");
     setMensaje(`✅ Sesión iniciada: ${usuario.nombre}`);
 
@@ -84,7 +437,7 @@ export default function App() {
   const limpiarCampos = () => {
     setPedido("");
     setAgencia("");
-    setCodigoRecojo("1639");
+    setCodigoRecojo("");
     setVoucherURL("");
     setVoucherBase64("");
     setVoucherNombre("");
@@ -112,6 +465,13 @@ export default function App() {
 
     const pedidoLimpio = pedido.trim().toUpperCase();
     if (!pedidoLimpio || !usuarioActivo || !estado) return;
+    if (esRetroceso(pedidoLimpio, estado)) {
+      const ultimo = ultimoEstadoPedido(pedidoLimpio);
+      setMensaje(
+        `⚠️ No puedes retroceder el pedido ${pedidoLimpio} de "${ultimo}" a "${estado}"`
+      );
+      return;
+    }
 
     const duplicado = registros.some(
       (r) => r.pedido === pedidoLimpio && r.estado === estado
@@ -123,11 +483,19 @@ export default function App() {
       return;
     }
 
-    if (esShalom && !codigoRecojo.trim()) {
+    if (esAgencia && !codigoRecojo.trim()) {
       setMensaje("⚠️ Falta el código de recojo");
       return;
     }
+    if (requiereFoto && !voucherURL.trim() && !voucherBase64) {
+      setMensaje("Sube una foto/evidencia antes de registrar.");
+      return;
+    }
 
+    if (requiereObservacion && !observacion.trim()) {
+      setMensaje("Escribe una observación antes de registrar.");
+      return;
+    }
     const now = new Date();
 
     const nuevoRegistro = {
@@ -168,7 +536,64 @@ export default function App() {
     setTimeout(() => inputRef.current?.focus(), 100);
   };
 
-  if (!usuarioActivo) {
+  const siguienteEstado = (estadoActual) => {
+    if (estadoActual === "Empaquetado") {
+      return tipoEnvio === "Agencia" ? "En agencia" : "En ruta";
+    }
+
+    if (estadoActual === "En ruta") return "Entregado";
+    if (estadoActual === "Reprogramado") return "En ruta";
+
+    return "";
+  };
+
+  const usarPedidoRapido = (pedidoSeleccionado, nuevoEstado) => {
+    if (!nuevoEstado) return;
+
+    const pedidoTexto = String(pedidoSeleccionado || "").trim().toUpperCase();
+
+    const ultimoRegistro = registros.find(
+      (r) => String(r.pedido || "").trim().toUpperCase() === pedidoTexto
+    );
+
+    setPedido(pedidoTexto);
+    setEstado(nuevoEstado);
+
+    if (nuevoEstado === "En agencia" && ultimoRegistro) {
+      setTipoEnvio("Agencia");
+      setAgencia(ultimoRegistro.agencia || "");
+      setCodigoRecojo(ultimoRegistro.codigoRecojo || "");
+    }
+
+    setTimeout(() => inputRef.current?.focus(), 100);
+  };
+
+    const iniciarScanner = () => {
+      setScannerActivo(true);
+
+      setTimeout(() => {
+        const scanner = new Html5QrcodeScanner(
+          "reader",
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+          },
+          false
+        );
+
+        scanner.render(
+          (decodedText) => {
+            setPedido(decodedText);
+            setScannerActivo(false);
+            scanner.clear();
+            setMensaje("✅ Pedido escaneado");
+          },
+          () => {}
+        );
+      }, 100);
+    };
+
+    if (!usuarioActivo) {
     return (
       <div style={styles.page}>
         <div style={styles.card}>
@@ -230,66 +655,111 @@ export default function App() {
           </button>
         </div>
 
+        <label style={styles.label}>Tipo de envío</label>
+        <select
+          value={tipoEnvio}
+          onChange={(e) => {
+            const nuevoTipo = e.target.value;
+            setTipoEnvio(nuevoTipo);
+            setEstado(nuevoTipo === "Agencia" ? "Empaquetado" : "Empaquetado");
+          }}
+          style={styles.select}
+        >
+          <option>Motorizado</option>
+          <option>Agencia</option>
+        </select>
+
         <label style={styles.label}>Etapa / Estado</label>
         <select
           value={estado}
           onChange={(e) => setEstado(e.target.value)}
           style={styles.select}
         >
-          {ESTADOS.map((e) => (
+          {estadosDisponibles.map((e) => (
             <option key={e}>{e}</option>
           ))}
         </select>
 
         <form onSubmit={registrar} style={styles.form}>
-          <input
-            ref={inputRef}
-            value={pedido}
-            onChange={(e) => setPedido(e.target.value)}
-            placeholder="Escanea o escribe #15727"
-            autoFocus
-            style={styles.input}
-          />
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              ref={inputRef}
+              value={pedido}
+              onChange={(e) => setPedido(e.target.value)}
+              placeholder="Escanea o escribe #15727"
+              style={{ ...styles.input, flex: 1 }}
+            />
 
-          {esShalom && (
+            <button
+              type="button"
+              onClick={iniciarScanner}
+              style={styles.cameraButton}
+            >
+              📷
+            </button>
+          </div>
+          {scannerActivo && (
+            <div style={{ marginTop: 12 }}>
+              <div id="reader"></div>
+            </div>
+          )}
+
+          {tipoEnvio === "Agencia" && (
             <>
-              <input
+              <select
                 value={agencia}
                 onChange={(e) => setAgencia(e.target.value)}
-                placeholder="Agencia Shalom / Marvisur"
-                style={styles.inputSmall}
-              />
+                style={styles.select}
+              >
+                <option value="">Selecciona agencia</option>
+                <option value="Shalom">Shalom</option>
+                <option value="Marvisur">Marvisur</option>
+                <option value="Olva">Olva</option>
+                <option value="Otro">Otro</option>
+              </select>
 
               <input
                 value={codigoRecojo}
                 onChange={(e) => setCodigoRecojo(e.target.value)}
                 placeholder="Código de recojo"
-                style={styles.inputSmall}
+                style={styles.input}
               />
+            </>
+          )}
 
-              <label style={styles.uploadButton}>
-                📷 Tomar/subir voucher
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={cargarVoucher}
-                  style={{ display: "none" }}
-                />
-              </label>
+              {requiereFoto && (
+                <>
+                  <label style={styles.uploadButton}>
+                    {tipoEnvio === "Agencia"
+                      ? "📷 Tomar/subir voucher de agencia"
+                      : "📷 Tomar foto del paquete entregado"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={cargarVoucher}
+                      style={{ display: "none" }}
+                    />
+                  </label>
 
-              {voucherNombre && (
-                <div style={styles.fileOk}>
-                  ✅ Voucher listo: {voucherNombre}
-                </div>
+                  {voucherNombre && (
+                    <div style={styles.fileOk}>
+                      ✅ Voucher listo: {voucherNombre}
+                    </div>
+                  )}
+
+                  <input
+                    value={voucherURL}
+                    onChange={(e) => setVoucherURL(e.target.value)}
+                    placeholder={
+                      tipoEnvio === "Agencia"
+                        ? "Link manual del voucher en Drive (opcional)"
+                        : "Link manual de foto de entrega (opcional)"
+                    }
+                    style={styles.inputSmall}
+                  />
+                </>
               )}
-
-              <input
-                value={voucherURL}
-                onChange={(e) => setVoucherURL(e.target.value)}
-                placeholder="Link manual del voucher en Drive (opcional)"
-                style={styles.inputSmall}
-              />
 
               <input
                 value={observacion}
@@ -297,8 +767,6 @@ export default function App() {
                 placeholder="Observación opcional"
                 style={styles.inputSmall}
               />
-            </>
-          )}
 
           <button disabled={guardando} style={styles.bigButton}>
             {guardando ? "Guardando..." : "REGISTRAR"}
@@ -323,9 +791,26 @@ export default function App() {
             {registrosFiltrados.map((r, i) => (
               <div key={i} style={styles.item}>
                 <strong>{r.pedido}</strong>
-                <span>{r.motorizado}</span>
                 <span>{r.estado}</span>
                 <small>{r.hora}</small>
+
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(String(r.pedido))}
+                  style={styles.miniButton}
+                >
+                  Copiar
+                </button>
+
+                {siguienteEstado(r.estado) && (
+                  <button
+                    type="button"
+                    onClick={() => usarPedidoRapido(r.pedido, siguienteEstado(r.estado))}
+                    style={styles.miniButton}
+                  >
+                    {siguienteEstado(r.estado)}
+                  </button>
+                )}  
               </div>
             ))}
           </div>
@@ -334,7 +819,6 @@ export default function App() {
     </div>
   );
 }
-
 const styles = {
   page: {
     minHeight: "100vh",
@@ -461,5 +945,61 @@ const styles = {
     gridTemplateColumns: "1.2fr 1fr 1fr 0.8fr",
     gap: 8,
     alignItems: "center",
+  },
+  timeline: {
+    display: "grid",
+    gap: 16,
+    marginTop: 20,
+  },
+  timelineItem: {
+    display: "grid",
+    gridTemplateColumns: "42px 1fr",
+    gap: 12,
+    background: "#1d1f27",
+    padding: 16,
+    borderRadius: 12,
+  },
+  dot: {
+    width: 34,
+    height: 34,
+    borderRadius: "50%",
+    background: "#ff7a00",
+    color: "#000",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: "bold",
+  },
+  link: {
+    display: "inline-block",
+    marginTop: 6,
+    color: "#7db4ff",
+    fontWeight: "bold",
+  },
+  alertBox: {
+    marginTop: 20,
+    padding: 18,
+    background: "#2a1f0f",
+    border: "1px solid #ff7a00",
+    borderRadius: 12,
+    textAlign: "center",
+  },
+  miniButton: {
+    padding: "8px 10px",
+    borderRadius: 8,
+    border: "none",
+    background: "#333",
+    color: "#fff",
+    fontWeight: "bold",
+    cursor: "pointer",
+  },
+  cameraButton: {
+  width: 60,
+  borderRadius: 10,
+  border: "none",
+  background: "#333",
+  color: "#fff",
+  fontSize: 22,
+  cursor: "pointer",
   },
 };
