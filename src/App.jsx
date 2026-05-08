@@ -93,6 +93,8 @@ function TrackingCliente() {
             placeholder="Ej: 15727"
             style={styles.input}
             autoFocus
+            inputMode="numeric"
+            pattern="[0-9]*"
           />
 
           <button style={styles.bigButton}>
@@ -150,7 +152,7 @@ function TrackingCliente() {
                             </div>
                           )}
 
-                          {evento.codigoRecojo && evento.estado === "En Shalom" && (
+                          {evento.codigoRecojo && evento.estado === "En agencia" && (
                             <div style={{ background: "#1d1f27", padding: 10, borderRadius: 10, marginTop: 10 }}>
                               Código de recojo:
                               <div style={{ fontSize: 30, fontWeight: "bold", color: "#ff7a00", marginTop: 6 }}>
@@ -159,7 +161,7 @@ function TrackingCliente() {
                             </div>
                           )}
 
-                          {evento.estado === "En Shalom" && (
+                          {evento.estado === "En agencia" && (
                             <a
                               href={esMarvisur ? "https://www.marvisur.com/" : "https://rastrea.shalom.pe/"}
                               target="_blank"
@@ -283,7 +285,9 @@ function PanelAdmin() {
             <div style={styles.list}>
               {filtrados.map((r, i) => (
                 <div key={i} style={styles.item}>
-                  <strong>{r.pedido}</strong>
+                  <strong style={styles.adminPedido}>
+                    {String(r.pedido || "").slice(0, 18)}
+                  </strong>
                   <span>{r.motorizado}</span>
                   <span>{r.estado}</span>
                   <small>{r.hora}</small>
@@ -297,6 +301,20 @@ function PanelAdmin() {
   );
 }
 
+function limpiarCodigoPedido(valor) {
+  const texto = String(valor || "").trim();
+
+  const matchId = texto.match(/"id"\s*:\s*"([^"]+)"/i);
+  if (matchId?.[1]) return matchId[1].trim();
+
+  const matchEnvio = texto.match(/Env[ií]o[:\s#]*([0-9]+)/i);
+  if (matchEnvio?.[1]) return matchEnvio[1].trim();
+
+  const matchVenta = texto.match(/Venta[:\s#]*([0-9]+)/i);
+  if (matchVenta?.[1]) return matchVenta[1].trim();
+
+  return texto.replace("#", "").trim().toUpperCase();
+}
 function AppInterna() {
   const [usuarioActivo, setUsuarioActivo] = useState(null);
   const [usuarioLogin, setUsuarioLogin] = useState("Anto");
@@ -330,22 +348,34 @@ function AppInterna() {
   };
   const [busqueda, setBusqueda] = useState("");
   const [mensaje, setMensaje] = useState("");
+  const [flashOk, setFlashOk] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
   const timerRef = useRef(null);
   const inputRef = useRef(null);
 
   const esAgencia = estado === "En agencia";
-  const requiereFoto = ["Entregado", "En agencia", "Reprogramado"].includes(estado);
 
-  const requiereObservacion = ["No entregado", "Reprogramado"].includes(estado);
+  const requiereFoto = [
+    "Entregado",
+    "En agencia",
+    "Reprogramado",
+  ].includes(estado);
+
+  const requiereObservacion = [
+    "No entregado",
+    "Reprogramado",
+  ].includes(estado);
+
   const horaActual = new Date().getHours();
   const puedeEmpaquetar = horaActual < 17;
 
-  const estadosDisponibles = (
-    tipoEnvio === "Agencia" ? ESTADOS_AGENCIA : ESTADOS_MOTORIZADO
-    ).filter((e) => puedeEmpaquetar || e !== "Empaquetado");
-    const ORDEN_ESTADOS = {
+  const estadosDisponibles =
+  tipoEnvio === "Agencia"
+    ? ESTADOS_AGENCIA
+    : ESTADOS_MOTORIZADO;
+
+  const ORDEN_ESTADOS = {
     Empaquetado: 1,
     "En ruta": 2,
     "En agencia": 2,
@@ -431,7 +461,14 @@ function AppInterna() {
   }, [registros, usuarioActivo]);
 
   const registrosFiltrados = registros.filter((r) =>
-    r.pedido.toLowerCase().includes(busqueda.toLowerCase())
+    String(r.pedido || "").toLowerCase().includes(busqueda.toLowerCase())
+  );
+
+  const registrosUnicos = Object.values(
+    registrosFiltrados.reduce((acc, r) => {
+      if (!acc[r.pedido]) acc[String(r.pedido || "")] = r;
+      return acc;
+    }, {})
   );
 
   const limpiarCampos = () => {
@@ -463,8 +500,12 @@ function AppInterna() {
     e.preventDefault();
     reiniciarTimer();
 
-    const pedidoLimpio = pedido.trim().toUpperCase();
+    const pedidoLimpio = limpiarCodigoPedido(pedido);
     if (!pedidoLimpio || !usuarioActivo || !estado) return;
+    if (estado === "Empaquetado" && !puedeEmpaquetar) {
+      setMensaje("⛔ Ya no se puede empaquetar después de las 5pm.");
+      return;
+    }
     if (esRetroceso(pedidoLimpio, estado)) {
       const ultimo = ultimoEstadoPedido(pedidoLimpio);
       setMensaje(
@@ -526,6 +567,11 @@ function AppInterna() {
 
       setRegistros([nuevoRegistro, ...registros]);
       setMensaje(`✅ ${pedidoLimpio} guardado como "${estado}"`);
+      setFlashOk(true);
+
+      setTimeout(() => {
+        setFlashOk(false);
+      }, 1000);
       limpiarCampos();
     } catch (error) {
       console.error(error);
@@ -556,8 +602,25 @@ function AppInterna() {
       (r) => String(r.pedido || "").trim().toUpperCase() === pedidoTexto
     );
 
+    if (nuevoEstado === "En ruta") {
+      registrarPedidoDirecto(pedidoTexto, "En ruta");
+      return;
+    }
+
     setPedido(pedidoTexto);
     setEstado(nuevoEstado);
+
+    if (nuevoEstado === "Entregado") {
+      setTipoEnvio("Motorizado");
+      setPedido(pedidoTexto);
+      setEstado("Entregado");
+
+      setTimeout(() => {
+        document.getElementById("fotoEntregaInput")?.click();
+      }, 200);
+
+      return;
+    }
 
     if (nuevoEstado === "En agencia" && ultimoRegistro) {
       setTipoEnvio("Agencia");
@@ -567,7 +630,61 @@ function AppInterna() {
 
     setTimeout(() => inputRef.current?.focus(), 100);
   };
+  const registrarPedidoDirecto = async (pedidoDirecto, estadoDirecto) => {
+    const pedidoLimpio = limpiarCodigoPedido(pedidoDirecto);
 
+    if (!pedidoLimpio || !usuarioActivo || !estadoDirecto) return;
+
+    const duplicado = registros.some(
+      (r) => r.pedido === pedidoLimpio && r.estado === estadoDirecto
+    );
+
+    if (duplicado) {
+      setMensaje(`⚠️ ${pedidoLimpio} ya fue registrado como "${estadoDirecto}"`);
+      return;
+    }
+
+    const now = new Date();
+
+    const nuevoRegistro = {
+      pedido: pedidoLimpio,
+      motorizado: usuarioActivo,
+      estado: estadoDirecto,
+      hora: now.toLocaleTimeString("es-PE"),
+      fecha: now.toLocaleDateString("es-PE"),
+      etapa: estadoDirecto,
+      agencia: agencia.trim(),
+      codigoRecojo: codigoRecojo.trim(),
+      voucherURL: "",
+      voucherBase64: "",
+      voucherNombre: "",
+      observacion: "",
+    };
+
+    setGuardando(true);
+
+    try {
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        body: JSON.stringify(nuevoRegistro),
+      });
+
+      setRegistros([nuevoRegistro, ...registros]);
+      setMensaje(`✅ ${pedidoLimpio} guardado como "${estadoDirecto}"`);
+      setFlashOk(true);
+
+      setTimeout(() => {
+        setFlashOk(false);
+      }, 1000);
+      setPedido("");
+    } catch (error) {
+      console.error(error);
+      setMensaje("❌ Error al guardar en Google Sheets");
+    }
+
+    setGuardando(false);
+  };
     const iniciarScanner = () => {
       setScannerActivo(true);
 
@@ -582,11 +699,18 @@ function AppInterna() {
         );
 
         scanner.render(
-          (decodedText) => {
-            setPedido(decodedText);
+          async (decodedText) => {
+            const pedidoEscaneado = limpiarCodigoPedido(decodedText);
+
+            setPedido(pedidoEscaneado);
             setScannerActivo(false);
             scanner.clear();
-            setMensaje("✅ Pedido escaneado");
+
+            if (estado === "Empaquetado") {
+              await registrarPedidoDirecto(pedidoEscaneado, "Empaquetado");
+            } else {
+              setMensaje("✅ Pedido escaneado");
+            }
           },
           () => {}
         );
@@ -634,7 +758,13 @@ function AppInterna() {
 
   return (
     <div style={styles.page} onClick={reiniciarTimer} onKeyDown={reiniciarTimer}>
-      <div style={styles.card}>
+      <div
+        style={{
+          ...styles.card,
+          border: flashOk ? "2px solid #00ff88" : "2px solid transparent",
+          transition: "0.2s",
+        }}
+      >
         <h1 style={styles.title}>📦 Tracking Achorao</h1>
 
         <div style={styles.stats}>
@@ -681,97 +811,121 @@ function AppInterna() {
         </select>
 
         <form onSubmit={registrar} style={styles.form}>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              ref={inputRef}
-              value={pedido}
-              onChange={(e) => setPedido(e.target.value)}
-              placeholder="Escanea o escribe #15727"
-              style={{ ...styles.input, flex: 1 }}
-            />
+  <div style={{ display: "flex", gap: 8 }}>
+    <input
+      ref={inputRef}
+      value={pedido}
+      onChange={(e) => setPedido(limpiarCodigoPedido(e.target.value))}
+      placeholder="Escanea o escribe #15727"
+      inputMode="numeric"
+      style={{ ...styles.input, flex: 1 }}
+    />
 
-            <button
-              type="button"
-              onClick={iniciarScanner}
-              style={styles.cameraButton}
-            >
-              📷
-            </button>
-          </div>
-          {scannerActivo && (
-            <div style={{ marginTop: 12 }}>
-              <div id="reader"></div>
-            </div>
-          )}
+    <button
+      type="button"
+      onClick={(e) => registrar(e)}
+      style={styles.sendButton}
+    >
+      ➜
+    </button>
+  </div>
 
-          {tipoEnvio === "Agencia" && (
-            <>
-              <select
-                value={agencia}
-                onChange={(e) => setAgencia(e.target.value)}
-                style={styles.select}
-              >
-                <option value="">Selecciona agencia</option>
-                <option value="Shalom">Shalom</option>
-                <option value="Marvisur">Marvisur</option>
-                <option value="Olva">Olva</option>
-                <option value="Otro">Otro</option>
-              </select>
+  {scannerActivo && (
+    <div style={styles.scannerOverlay}>
+      <div style={styles.scannerBox}>
+        <div id="reader"></div>
 
-              <input
-                value={codigoRecojo}
-                onChange={(e) => setCodigoRecojo(e.target.value)}
-                placeholder="Código de recojo"
-                style={styles.input}
-              />
-            </>
-          )}
+        <button
+          type="button"
+          onClick={() => setScannerActivo(false)}
+          style={styles.bigButton}
+        >
+          CERRAR CÁMARA
+        </button>
+      </div>
+    </div>
+  )}
 
-              {requiereFoto && (
-                <>
-                  <label style={styles.uploadButton}>
-                    {tipoEnvio === "Agencia"
-                      ? "📷 Tomar/subir voucher de agencia"
-                      : "📷 Tomar foto del paquete entregado"}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={cargarVoucher}
-                      style={{ display: "none" }}
-                    />
-                  </label>
+  {tipoEnvio === "Agencia" && (
+    <>
+      <select
+        value={agencia}
+        onChange={(e) => setAgencia(e.target.value)}
+        style={styles.select}
+      >
+        <option value="">Selecciona agencia</option>
+        <option value="Shalom">Shalom</option>
+        <option value="Marvisur">Marvisur</option>
+        <option value="Olva">Olva</option>
+        <option value="Otro">Otro</option>
+      </select>
 
-                  {voucherNombre && (
-                    <div style={styles.fileOk}>
-                      ✅ Voucher listo: {voucherNombre}
-                    </div>
-                  )}
+      <input
+        value={codigoRecojo}
+        onChange={(e) => setCodigoRecojo(e.target.value)}
+        placeholder="Código de recojo"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        style={styles.input}
+      />
+    </>
+  )}
 
-                  <input
-                    value={voucherURL}
-                    onChange={(e) => setVoucherURL(e.target.value)}
-                    placeholder={
-                      tipoEnvio === "Agencia"
-                        ? "Link manual del voucher en Drive (opcional)"
-                        : "Link manual de foto de entrega (opcional)"
-                    }
-                    style={styles.inputSmall}
-                  />
-                </>
-              )}
+  {requiereFoto && (
+    <>
+      <label style={styles.uploadButton}>
+        {tipoEnvio === "Agencia"
+          ? "📷 Tomar/subir voucher de agencia"
+          : "📷 Tomar foto del paquete entregado"}
+        <input
+          id="fotoEntregaInput"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={cargarVoucher}
+          style={{ display: "none" }}
+        />
+      </label>
 
-              <input
-                value={observacion}
-                onChange={(e) => setObservacion(e.target.value)}
-                placeholder="Observación opcional"
-                style={styles.inputSmall}
-              />
+      {voucherNombre && (
+        <div style={styles.fileOk}>
+          ✅ Voucher listo: {voucherNombre}
+        </div>
+      )}
+    </>
+  )}
 
-          <button disabled={guardando} style={styles.bigButton}>
-            {guardando ? "Guardando..." : "REGISTRAR"}
-          </button>
-        </form>
+  {estado !== "Empaquetado" && (
+    <input
+      value={observacion}
+      onChange={(e) => setObservacion(e.target.value)}
+      placeholder="Observación opcional"
+      style={styles.inputSmall}
+    />
+  )}
+
+  {estado === "Empaquetado" && (
+    <button
+      type="button"
+      onClick={iniciarScanner}
+      style={styles.bigButton}
+    >
+      ESCANEAR PEDIDO
+    </button>
+  )}
+
+  {estado === "Entregado" && (
+    <button disabled={guardando} style={styles.bigButton}>
+      {guardando ? "Guardando..." : "REGISTRAR ENTREGA"}
+    </button>
+  )}
+
+  {estado === "En agencia" && (
+    <button disabled={guardando} style={styles.bigButton}>
+      {guardando ? "Guardando..." : "REGISTRAR EN AGENCIA"}
+    </button>
+  )}
+</form>
 
         {mensaje && <div style={styles.message}>{mensaje}</div>}
 
@@ -779,6 +933,8 @@ function AppInterna() {
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
           placeholder="Buscar pedido..."
+          inputMode="numeric"
+          pattern="[0-9]*"
           style={styles.search}
         />
 
@@ -788,7 +944,7 @@ function AppInterna() {
           <p style={{ opacity: 0.7 }}>Aún no hay registros.</p>
         ) : (
           <div style={styles.list}>
-            {registrosFiltrados.map((r, i) => (
+            {registrosUnicos.map((r, i) => (
               <div key={i} style={styles.item}>
                 <strong>{r.pedido}</strong>
                 <span>{r.estado}</span>
@@ -808,7 +964,13 @@ function AppInterna() {
                     onClick={() => usarPedidoRapido(r.pedido, siguienteEstado(r.estado))}
                     style={styles.miniButton}
                   >
-                    {siguienteEstado(r.estado)}
+                    {siguienteEstado(r.estado) === "En ruta"
+                    ? "DESPACHAR"
+                    : siguienteEstado(r.estado) === "En agencia"
+                    ? "ENVIAR A AGENCIA"
+                    : siguienteEstado(r.estado) === "Entregado"
+                    ? "ENTREGAR"
+                    : siguienteEstado(r.estado)}
                   </button>
                 )}  
               </div>
@@ -935,16 +1097,23 @@ const styles = {
   },
   list: {
     display: "grid",
-    gap: 10,
+    gap: 8,
+    width: "100%",
+    maxWidth: "100%",
+    overflowX: "hidden",
   },
   item: {
     background: "#1d1f27",
-    padding: 14,
+    padding: 10,
     borderRadius: 10,
     display: "grid",
-    gridTemplateColumns: "1.2fr 1fr 1fr 0.8fr",
-    gap: 8,
+    gridTemplateColumns: "1fr",
+    gap: 6,
     alignItems: "center",
+    wordBreak: "break-word",
+    overflowWrap: "break-word",
+    maxWidth: "100%",
+    boxSizing: "border-box",
   },
   timeline: {
     display: "grid",
@@ -1001,5 +1170,35 @@ const styles = {
   color: "#fff",
   fontSize: 22,
   cursor: "pointer",
+  },
+  scannerOverlay: {
+  position: "fixed",
+  inset: 0,
+  background: "#000",
+  zIndex: 9999,
+  padding: 12,
+  boxSizing: "border-box",
+  overflow: "auto",
+  },
+  scannerBox: {
+    width: "100%",
+    maxWidth: 520,
+    margin: "0 auto",
+  },
+    sendButton: {
+    width: "58px",
+    border: "none",
+    borderRadius: "10px",
+    background: "#2d2d2d",
+    color: "#fff",
+    fontSize: "24px",
+    fontWeight: "bold",
+    cursor: "pointer",
+  },
+  adminPedido: {
+    maxWidth: 180,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
 };
