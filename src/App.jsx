@@ -1,3 +1,4 @@
+import imageCompression from "browser-image-compression";
 import { Html5QrcodeScanner } from "html5-qrcode";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -510,19 +511,32 @@ function AppInterna() {
     setObservacion("");
   };
 
-  const cargarVoucher = (e) => {
+  const cargarVoucher = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
+    try {
+      setMensaje("⏳ Comprimiendo imagen...");
 
-    reader.onload = () => {
-      setVoucherBase64(reader.result);
-      setVoucherNombre(file.name);
-      setMensaje(`📷 Voucher cargado: ${file.name}`);
-    };
+      const compressedFile = await imageCompression(file, {
+        maxSizeMB: 0.25,
+        maxWidthOrHeight: 1280,
+        useWebWorker: true,
+      });
 
-    reader.readAsDataURL(file);
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        setVoucherBase64(reader.result);
+        setVoucherNombre(compressedFile.name || file.name);
+        setMensaje(`📷 Imagen lista: ${Math.round(compressedFile.size / 1024)} KB`);
+      };
+
+      reader.readAsDataURL(compressedFile);
+    } catch (error) {
+      console.error(error);
+      setMensaje("❌ No se pudo comprimir la imagen.");
+    }
   };
 
   const registrar = async (e) => {
