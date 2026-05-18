@@ -951,16 +951,16 @@ const estadosDisponibles =
     <>
       <label style={styles.uploadButton}>
         {tipoEnvio === "Agencia"
-          ? "📷 Tomar/subir voucher de agencia"
-          : "📷 Tomar foto del paquete entregado"}
+          ? "🧾 Subir voucher de agencia"
+          : estado === "Entregado"
+          ? "📷 Tomar foto de entrega"
+          : "📎 Subir evidencia"}
         <input
           type="file"
           accept="image/*"
-          capture={
-            estado === "Entregado"
-              ? "environment"
-              : undefined
-          }
+          capture={estado === "Entregado" ? "environment" : undefined}
+          onChange={cargarVoucher}
+          style={{ display: "none" }}
         />
       </label>
 
