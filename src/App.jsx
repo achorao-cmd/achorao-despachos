@@ -401,19 +401,37 @@ function AppInterna() {
   const horaActual = new Date().getHours();
   const puedeEmpaquetar = horaActual < 17;
 
-  const estadosDisponibles =
+  const ESTADOS_GARANTIA = [
+  "Empaquetado",
+  "En proveedor",
+  "En revisión",
+  "Listo para recoger",
+  "Recogido",
+  "Devuelto al cliente",
+  "Cerrado con nota de crédito",
+];
+
+const estadosDisponibles =
   tipoEnvio === "Agencia"
     ? ESTADOS_AGENCIA
+    : tipoEnvio === "Garantía"
+    ? ESTADOS_GARANTIA
     : ESTADOS_MOTORIZADO;
 
   const ORDEN_ESTADOS = {
-    Empaquetado: 1,
-    "En ruta": 2,
-    "En agencia": 2,
-    Entregado: 3,
-    "No entregado": 3,
-    Reprogramado: 3,
-  };
+  Empaquetado: 1,
+  "En ruta": 2,
+  "En agencia": 2,
+  Entregado: 3,
+  "No entregado": 3,
+  Reprogramado: 3,
+  "En proveedor": 2,
+  "En revisión": 3,
+  "Listo para recoger": 4,
+  Recogido: 5,
+  "Devuelto al cliente": 6,
+  "Cerrado con nota de crédito": 6,
+};
 
   const ultimoEstadoPedido = (pedidoBuscado) => {
     const pedidoLimpio = String(pedidoBuscado || "").trim().toUpperCase();
@@ -841,6 +859,7 @@ function AppInterna() {
         >
           <option>Motorizado</option>
           <option>Agencia</option>
+          <option>Garantía</option>
         </select>
 
         <label style={styles.label}>Etapa / Estado</label>
@@ -859,9 +878,19 @@ function AppInterna() {
     <input
       ref={inputRef}
       value={pedido}
-      onChange={(e) => setPedido(limpiarCodigoPedido(e.target.value))}
-      placeholder="Escanea o escribe #15727"
-      inputMode="numeric"
+      onChange={(e) =>
+        setPedido(
+          tipoEnvio === "Garantía"
+            ? e.target.value
+            : limpiarCodigoPedido(e.target.value)
+        )
+      }
+      placeholder={
+        tipoEnvio === "Garantía"
+          ? "Ej: Garantía Razer / Igarashi"
+          : "Escanea o escribe #15727"
+      }
+      inputMode={tipoEnvio === "Garantía" ? "text" : "numeric"}
       style={{ ...styles.input, flex: 1 }}
     />
 
@@ -922,12 +951,13 @@ function AppInterna() {
           ? "📷 Tomar/subir voucher de agencia"
           : "📷 Tomar foto del paquete entregado"}
         <input
-          id="fotoEntregaInput"
           type="file"
           accept="image/*"
-          capture="environment"
-          onChange={cargarVoucher}
-          style={{ display: "none" }}
+          capture={
+            estado === "Entregado"
+              ? "environment"
+              : undefined
+          }
         />
       </label>
 
@@ -977,8 +1007,8 @@ function AppInterna() {
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
           placeholder="Buscar pedido..."
-          inputMode="numeric"
-          pattern="[0-9]*"
+          inputMode={tipoEnvio === "Garantía" ? "text" : "numeric"}
+          pattern={tipoEnvio === "Garantía" ? undefined : "[0-9]*"}
           style={styles.search}
         />
 
@@ -993,14 +1023,6 @@ function AppInterna() {
                 <strong>{r.pedido}</strong>
                 <span>{r.estado}</span>
                 <small>{r.hora}</small>
-
-                <button
-                  type="button"
-                  onClick={() => navigator.clipboard.writeText(String(r.pedido))}
-                  style={styles.miniButton}
-                >
-                  Copiar
-                </button>
 
                 {siguienteEstado(r.estado) && (
                   <button
