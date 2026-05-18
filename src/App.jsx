@@ -9,6 +9,7 @@ const USUARIOS = [
   { nombre: "Anto", pin: "1111" },
   { nombre: "Enrique", pin: "2222" },
   { nombre: "Elias", pin: "3333" },
+  { nombre: "Karlo", pin: "4444" },
 ];
 
 const ESTADOS_MOTORIZADO = ["Empaquetado", "En ruta", "Entregado", "No entregado", "Reprogramado"];
