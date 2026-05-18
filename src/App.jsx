@@ -756,6 +756,9 @@ const estadosDisponibles =
           {
             fps: 10,
             qrbox: { width: 250, height: 250 },
+            videoConstraints: {
+              facingMode: { ideal: "environment" }
+            }
           },
           false
         );
