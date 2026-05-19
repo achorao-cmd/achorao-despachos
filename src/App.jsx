@@ -236,18 +236,17 @@ function PanelAdmin() {
   });
 
   const registrosActuales = Object.values(
-  filtrados.reduce((acc, r) => {
-    const pedidoKey = String(r.pedido || "").trim();
+  registros.reduce((acc, r, index) => {
+    const key = String(r.pedido || "").trim().toUpperCase();
+    if (!key) return acc;
 
-    if (!pedidoKey) return acc;
+    const fechaActual = fechaRegistroMs(r) || index;
+    const fechaGuardada = acc[key]
+      ? fechaRegistroMs(acc[key]) || acc[key]._index || 0
+      : 0;
 
-    const fechaActual = new Date(r.registroReal || `${r.fecha} ${r.hora}`);
-    const fechaGuardada = acc[pedidoKey]
-      ? new Date(acc[pedidoKey].registroReal || `${acc[pedidoKey].fecha} ${acc[pedidoKey].hora}`)
-      : null;
-
-    if (!acc[pedidoKey] || fechaActual > fechaGuardada) {
-      acc[pedidoKey] = r;
+    if (!acc[key] || fechaActual >= fechaGuardada) {
+      acc[key] = { ...r, _index: index };
     }
 
     return acc;
@@ -350,6 +349,13 @@ function AppInterna() {
   const [usuarioActivo, setUsuarioActivo] = useState(null);
   const [usuarioLogin, setUsuarioLogin] = useState("Anto");
   const [pin, setPin] = useState("");
+
+    const [splash, setSplash] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setSplash(false), 1200);
+    return () => clearTimeout(t);
+  }, []);
 
   const [pedido, setPedido] = useState("");
   const [estado, setEstado] = useState("Empaquetado");
@@ -516,24 +522,21 @@ const estadosDisponibles =
   const esGarantiaPedido = (valor) =>
   String(valor || "").toUpperCase().includes("GARANT");
 
-const registrosActuales = Object.values(
-  registros.reduce((acc, r) => {
-    const key = String(r.pedido || "").trim().toUpperCase();
+const fechaRegistroMs = (r) => {
+  const raw = String(r.registroReal || "").trim();
 
-    if (!key) return acc;
+  if (raw) {
+    const [fechaParte, horaParte = "00:00:00"] = raw.split(" ");
+    const [d, m, y] = fechaParte.split("/").map(Number);
+    const [hh = 0, mm = 0, ss = 0] = horaParte.split(":").map(Number);
 
-    const fechaActual = new Date(r.registroReal || `${r.fecha} ${r.hora}`);
-    const fechaGuardada = acc[key]
-      ? new Date(acc[key].registroReal || `${acc[key].fecha} ${acc[key].hora}`)
-      : null;
-
-    if (!acc[key] || fechaActual > fechaGuardada) {
-      acc[key] = r;
+    if (d && m && y) {
+      return new Date(y, m - 1, d, hh, mm, ss).getTime();
     }
+  }
 
-    return acc;
-  }, {})
-);
+  return 0;
+};
 
 const registrosUnicos = registrosActuales.filter((r) => {
   const asignado = String(r.asignadoA || "").trim();
@@ -920,6 +923,16 @@ const confirmarAccionRuta = async () => {
       }, 100);
     };
 
+    if (splash) {
+      return (
+        <div style={styles.splash}>
+          <div style={styles.splashLogo}>📦</div>
+          <h1>Tracking Achorao</h1>
+          <p>Preparando despachos...</p>
+        </div>
+      );
+    }
+
     if (!usuarioActivo) {
     return (
       <div style={styles.page}>
@@ -944,10 +957,12 @@ const confirmarAccionRuta = async () => {
             <input
               type="password"
               value={pin}
-              onChange={(e) => setPin(e.target.value)}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
               placeholder="Ingresa tu PIN"
               style={styles.input}
               autoFocus
+              inputMode="numeric"
+              pattern="[0-9]*"
             />
 
             <button style={styles.bigButton}>INGRESAR</button>
@@ -1692,5 +1707,21 @@ textarea: {
   borderRadius: 10,
   boxSizing: "border-box",
   fontSize: 16,
+},
+
+splash: {
+  minHeight: "100vh",
+  background: "#111217",
+  color: "#fff",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  fontFamily: "Arial",
+},
+
+splashLogo: {
+  fontSize: 64,
+  marginBottom: 12,
 },
 };

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Tracking Achorao</string>
+    <string name="title_activity_main">Tracking Achorao</string>
+    <string name="package_name">com.achorao.tracking</string>
+    <string name="custom_url_scheme">com.achorao.tracking</string>
+</resources>
