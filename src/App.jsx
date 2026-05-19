@@ -379,8 +379,12 @@ function AppInterna() {
   };
   const [busqueda, setBusqueda] = useState("");
   const [mensaje, setMensaje] = useState("");
+  const [soloMios, setSoloMios] = useState(false);
+  const [vista, setVista] = useState("tomar");
   const [flashOk, setFlashOk] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [accionRuta, setAccionRuta] = useState(null);
+  const [modalObs, setModalObs] = useState("");
 
   const timerRef = useRef(null);
   const inputRef = useRef(null);
@@ -434,21 +438,21 @@ const estadosDisponibles =
 };
 
   const ultimoEstadoPedido = (pedidoBuscado) => {
-    const pedidoLimpio = String(pedidoBuscado || "").trim().toUpperCase();
+  const pedidoLimpio = String(pedidoBuscado || "").trim().toUpperCase();
 
-    const eventos = registros.filter(
-      (r) => String(r.pedido || "").trim().toUpperCase() === pedidoLimpio
-    );
+  const eventos = registros.filter(
+    (r) => String(r.pedido || "").trim().toUpperCase() === pedidoLimpio
+  );
 
-    if (eventos.length === 0) return "";
+  if (eventos.length === 0) return "";
 
-    return eventos.reduce((ultimo, actual) => {
-      const ordenActual = ORDEN_ESTADOS[actual.estado] || 0;
-      const ordenUltimo = ORDEN_ESTADOS[ultimo.estado] || 0;
+  return eventos.reduce((ultimo, actual) => {
+    const ordenActual = ORDEN_ESTADOS[actual.estado] || 0;
+    const ordenUltimo = ORDEN_ESTADOS[ultimo.estado] || 0;
 
-      return ordenActual > ordenUltimo ? actual : ultimo;
-    }).estado;
-  };
+    return ordenActual > ordenUltimo ? actual : ultimo;
+  }).estado;
+};
 
   const esRetroceso = (pedidoBuscado, nuevoEstado) => {
     const ultimo = ultimoEstadoPedido(pedidoBuscado);
@@ -505,20 +509,66 @@ const estadosDisponibles =
     setTimeout(() => inputRef.current?.focus(), 100);
   };
 
-  const contadorUsuario = useMemo(() => {
-    return registros.filter((r) => r.motorizado === usuarioActivo).length;
-  }, [registros, usuarioActivo]);
-
   const registrosFiltrados = registros.filter((r) =>
     String(r.pedido || "").toLowerCase().includes(busqueda.toLowerCase())
   );
 
-  const registrosUnicos = Object.values(
-    registrosFiltrados.reduce((acc, r) => {
-      if (!acc[r.pedido]) acc[String(r.pedido || "")] = r;
-      return acc;
-    }, {})
-  );
+  const esGarantiaPedido = (valor) =>
+  String(valor || "").toUpperCase().includes("GARANT");
+
+const registrosActuales = Object.values(
+  registros.reduce((acc, r) => {
+    const key = String(r.pedido || "").trim().toUpperCase();
+
+    if (!key) return acc;
+
+    const fechaActual = new Date(r.registroReal || `${r.fecha} ${r.hora}`);
+    const fechaGuardada = acc[key]
+      ? new Date(acc[key].registroReal || `${acc[key].fecha} ${acc[key].hora}`)
+      : null;
+
+    if (!acc[key] || fechaActual > fechaGuardada) {
+      acc[key] = r;
+    }
+
+    return acc;
+  }, {})
+);
+
+const registrosUnicos = registrosActuales.filter((r) => {
+  const asignado = String(r.asignadoA || "").trim();
+
+  if (vista === "tomar") {
+    return (
+      r.estado === "Empaquetado" &&
+      !asignado &&
+      !esGarantiaPedido(r.pedido)
+    );
+  }
+
+  if (vista === "mios") {
+    return asignado === usuarioActivo && r.estado === "En ruta";
+  }
+
+  return true;
+}).filter((r) =>
+  String(r.pedido || "")
+    .toLowerCase()
+    .includes(busqueda.toLowerCase())
+);
+
+const contadorDisponibles = registrosActuales.filter(
+  (r) =>
+    r.estado === "Empaquetado" &&
+    !String(r.asignadoA || "").trim() &&
+    !esGarantiaPedido(r.pedido)
+).length;
+
+const contadorMiRuta = registrosActuales.filter(
+  (r) =>
+    String(r.asignadoA || "").trim() === usuarioActivo &&
+    r.estado === "En ruta"
+).length;
 
   const limpiarCampos = () => {
     setPedido("");
@@ -564,7 +614,7 @@ const estadosDisponibles =
 
     const pedidoLimpio = limpiarCodigoPedido(pedido);
     if (!pedidoLimpio || !usuarioActivo || !estado) return;
-    if (estado === "Empaquetado" && !puedeEmpaquetar) {
+    if (!puedeEmpaquetar && estado === "Empaquetado" && tipoEnvio !== "Garantía") {
       setMensaje("⛔ Ya no se puede empaquetar después de las 5pm.");
       return;
     }
@@ -577,12 +627,13 @@ const estadosDisponibles =
     }
 
     const duplicado = registros.some(
-      (r) => r.pedido === pedidoLimpio && r.estado === estado
+      (r) =>
+        String(r.pedido || "").trim().toUpperCase() === pedidoLimpio &&
+        r.estado === estado
     );
 
     if (duplicado) {
       setMensaje(`⚠️ ${pedidoLimpio} ya fue registrado como "${estado}"`);
-      setPedido("");
       return;
     }
 
@@ -616,6 +667,7 @@ const estadosDisponibles =
         ? `${pedidoLimpio}_${usuarioActivo}_${voucherNombre}`
         : "",
       observacion: observacion.trim(),
+      asignadoA: "",
     };
 
     setGuardando(true);
@@ -645,15 +697,43 @@ const estadosDisponibles =
   };
 
   const siguienteEstado = (estadoActual) => {
-    if (estadoActual === "Empaquetado") {
-      return tipoEnvio === "Agencia" ? "En agencia" : "En ruta";
-    }
 
-    if (estadoActual === "En ruta") return "Entregado";
-    if (estadoActual === "Reprogramado") return "En ruta";
+  // GARANTÍAS
+  if (tipoEnvio === "Garantía") {
+
+    if (estadoActual === "Empaquetado")
+      return "En proveedor";
+
+    if (estadoActual === "En proveedor")
+      return "En revisión";
+
+    if (estadoActual === "En revisión")
+      return "Listo para recoger";
+
+    if (estadoActual === "Listo para recoger")
+      return "Recogido";
+
+    if (estadoActual === "Recogido")
+      return "Devuelto al cliente";
 
     return "";
-  };
+  }
+
+  // AGENCIA / MOTORIZADO
+  if (estadoActual === "Empaquetado") {
+    return tipoEnvio === "Agencia"
+      ? "En agencia"
+      : "En ruta";
+  }
+
+  if (estadoActual === "En ruta")
+    return "Entregado";
+
+  if (estadoActual === "Reprogramado")
+    return "En ruta";
+
+  return "";
+};
 
   const usarPedidoRapido = (pedidoSeleccionado, nuevoEstado) => {
     if (!nuevoEstado) return;
@@ -692,13 +772,70 @@ const estadosDisponibles =
 
     setTimeout(() => inputRef.current?.focus(), 100);
   };
-  const registrarPedidoDirecto = async (pedidoDirecto, estadoDirecto) => {
+
+  const abrirAccionRuta = (pedido, tipo) => {
+  setAccionRuta({ pedido, tipo });
+  setModalObs("");
+  setVoucherBase64("");
+  setVoucherNombre("");
+};
+
+const confirmarAccionRuta = async () => {
+  if (!accionRuta) return;
+  if (guardando) return;
+
+  setGuardando(true);
+
+  try {
+    const estadoFinal =
+      accionRuta.tipo === "entregado"
+        ? "Entregado"
+        : accionRuta.tipo === "reprogramado"
+        ? "Reprogramado"
+        : "No entregado";
+
+    if (accionRuta.tipo === "entregado" && !voucherBase64) {
+      setMensaje("📷 Debes subir foto de entrega.");
+      return;
+    }
+
+    if (accionRuta.tipo === "reprogramado" && (!modalObs.trim() || !voucherBase64)) {
+      setMensaje("🔄 Debes colocar motivo y subir evidencia.");
+      return;
+    }
+
+    if (accionRuta.tipo === "no_entregado" && !modalObs.trim()) {
+      setMensaje("❌ Debes escribir el motivo de no entrega.");
+      return;
+    }
+
+    await registrarPedidoDirecto(accionRuta.pedido, estadoFinal, usuarioActivo, {
+      observacion: modalObs.trim(),
+      voucherBase64,
+      voucherNombre: voucherNombre
+        ? `${accionRuta.pedido}_${usuarioActivo}_${voucherNombre}`
+        : "",
+    });
+
+    setAccionRuta(null);
+    setModalObs("");
+    setVoucherBase64("");
+    setVoucherNombre("");
+  } finally {
+    setGuardando(false);
+  }
+};
+
+ const registrarPedidoDirecto = async (pedidoDirecto, estadoDirecto, asignadoA = "", extra = {}) => {
     const pedidoLimpio = limpiarCodigoPedido(pedidoDirecto);
 
     if (!pedidoLimpio || !usuarioActivo || !estadoDirecto) return;
 
     const duplicado = registros.some(
-      (r) => r.pedido === pedidoLimpio && r.estado === estadoDirecto
+      (r) =>
+        String(r.pedido || "").trim().toUpperCase() === pedidoLimpio &&
+        r.estado === estadoDirecto &&
+        String(r.asignadoA || "").trim() === String(asignadoA || "").trim()
     );
 
     if (duplicado) {
@@ -718,9 +855,10 @@ const estadosDisponibles =
       agencia: agencia.trim(),
       codigoRecojo: codigoRecojo.trim(),
       voucherURL: "",
-      voucherBase64: "",
-      voucherNombre: "",
-      observacion: "",
+      voucherBase64: extra.voucherBase64 || "",
+      voucherNombre: extra.voucherNombre || "",
+      observacion: extra.observacion || "",
+      asignadoA: asignadoA || "",
     };
 
     setGuardando(true);
@@ -834,12 +972,12 @@ const estadosDisponibles =
 
         <div style={styles.stats}>
           <div>
-            <strong>{registros.length}</strong>
-            <span>Total sesión</span>
+            <strong>{contadorDisponibles}</strong>
+            <span>Disponibles</span>
           </div>
           <div>
-            <strong>{contadorUsuario}</strong>
-            <span>{usuarioActivo}</span>
+            <strong>{contadorMiRuta}</strong>
+            <span>Mi ruta</span>
           </div>
         </div>
 
@@ -850,6 +988,30 @@ const estadosDisponibles =
           </button>
         </div>
 
+        <div style={styles.tabs}>
+          <button
+            onClick={() => setVista("tomar")}
+            style={{
+              ...styles.tabButton,
+              ...(vista === "tomar" ? styles.tabButtonActive : {})
+            }}
+          >
+            📦 Tomar pedidos
+          </button>
+
+          <button
+            onClick={() => setVista("mios")}
+            style={{
+              ...styles.tabButton,
+              ...(vista === "mios" ? styles.tabButtonActive : {})
+            }}
+          >
+            🛵 Mi ruta
+          </button>
+        </div>
+
+        {vista === "tomar" && (
+  <>
         <label style={styles.label}>Tipo de envío</label>
         <select
           value={tipoEnvio}
@@ -947,6 +1109,29 @@ const estadosDisponibles =
     </>
   )}
 
+  {tipoEnvio === "Garantía" && estado === "Empaquetado" && (
+  <>
+    <label style={styles.uploadButton}>
+      📷 Tomar foto de garantía
+      <input
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={cargarVoucher}
+        style={{ display: "none" }}
+      />
+    </label>
+
+    <button
+      type="submit"
+      disabled={guardando}
+      style={styles.bigButton}
+    >
+      {guardando ? "Guardando..." : "REGISTRAR GARANTÍA"}
+    </button>
+  </>
+)}
+
   {requiereFoto && (
     <>
       <label style={styles.uploadButton}>
@@ -981,7 +1166,7 @@ const estadosDisponibles =
     />
   )}
 
-  {estado === "Empaquetado" && (
+  {estado === "Empaquetado" && tipoEnvio !== "Garantía" && (
     <button
       type="button"
       onClick={iniciarScanner}
@@ -1005,51 +1190,139 @@ const estadosDisponibles =
 </form>
 
         {mensaje && <div style={styles.message}>{mensaje}</div>}
+          </>
+)}
 
-        <input
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar pedido..."
-          inputMode={tipoEnvio === "Garantía" ? "text" : "numeric"}
-          pattern={tipoEnvio === "Garantía" ? undefined : "[0-9]*"}
-          style={styles.search}
-        />
+        <h3>{vista === "tomar" ? "Pedidos disponibles" : "Pedidos en mi ruta"}</h3>
 
-        <h3>Últimos registros</h3>
+        {registrosUnicos.length === 0 ? (
+  <p style={{ opacity: 0.7 }}>Aún no hay pedidos.</p>
+) : (
+  <div style={styles.list}>
+    {registrosUnicos.map((r, i) => (
+      <div key={i} style={styles.item}>
+        <strong>{r.pedido}</strong>
+        <span>{r.estado}</span>
+        <small>{r.hora}</small>
 
-        {registrosFiltrados.length === 0 ? (
-          <p style={{ opacity: 0.7 }}>Aún no hay registros.</p>
+        {vista === "mios" ? (
+          <div style={styles.routeActions}>
+            <button
+              type="button"
+              onClick={() => abrirAccionRuta(r.pedido, "entregado")}
+              style={styles.deliverButton}
+            >
+              ✅ ENTREGADO
+            </button>
+
+            <button
+              type="button"
+              onClick={() => abrirAccionRuta(r.pedido, "reprogramado")}
+              style={styles.secondaryActionButton}
+            >
+              🔄 REPROGRAMAR
+            </button>
+
+            <button
+              type="button"
+              onClick={() => abrirAccionRuta(r.pedido, "no_entregado")}
+              style={styles.secondaryActionButton}
+            >
+              ❌ NO ENTREGADO
+            </button>
+          </div>
         ) : (
-          <div style={styles.list}>
-            {registrosUnicos.map((r, i) => (
-              <div key={i} style={styles.item}>
-                <strong>{r.pedido}</strong>
-                <span>{r.estado}</span>
-                <small>{r.hora}</small>
+          siguienteEstado(r.estado) && (
+            <button
+              type="button"
+              onClick={() => {
+                if (siguienteEstado(r.estado) === "En ruta") {
+                  registrarPedidoDirecto(r.pedido, "En ruta", usuarioActivo);
+                  setVista("mios");
+                  return;
+                }
 
-                {siguienteEstado(r.estado) && (
-                  <button
-                    type="button"
-                    onClick={() => usarPedidoRapido(r.pedido, siguienteEstado(r.estado))}
-                    style={styles.miniButton}
-                  >
-                    {siguienteEstado(r.estado) === "En ruta"
-                    ? "DESPACHAR"
-                    : siguienteEstado(r.estado) === "En agencia"
-                    ? "ENVIAR A AGENCIA"
-                    : siguienteEstado(r.estado) === "Entregado"
-                    ? "ENTREGAR"
-                    : siguienteEstado(r.estado)}
-                  </button>
-                )}  
-              </div>
-            ))}
+                usarPedidoRapido(r.pedido, siguienteEstado(r.estado));
+              }}
+              style={styles.miniButton}
+            >
+              TOMAR PEDIDO
+            </button>
+          )
+        )}
+      </div>
+    ))}
+  </div>
+)}
+
+        {accionRuta && (
+          <div style={styles.modalOverlay}>
+            <div style={styles.modalBox}>
+              <h3>
+                {accionRuta.tipo === "entregado"
+                  ? "✅ Confirmar entrega"
+                  : accionRuta.tipo === "reprogramado"
+                  ? "🔄 Reprogramar pedido"
+                  : "❌ No entregado"}
+              </h3>
+
+              <strong>Pedido: {accionRuta.pedido}</strong>
+
+              {accionRuta.tipo !== "entregado" && (
+                <textarea
+                  value={modalObs}
+                  onChange={(e) => setModalObs(e.target.value)}
+                  placeholder={
+                    accionRuta.tipo === "reprogramado"
+                      ? "Motivo / nueva fecha u hora..."
+                      : "Motivo de no entrega..."
+                  }
+                  style={styles.textarea}
+                />
+              )}
+
+              {accionRuta.tipo !== "no_entregado" && (
+                <label style={styles.uploadButton}>
+                  📷 Subir evidencia
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={cargarVoucher}
+                    style={{ display: "none" }}
+                  />
+                </label>
+              )}
+
+              {voucherNombre && (
+                <div style={styles.fileOk}>
+                  ✅ Foto lista: {voucherNombre}
+                </div>
+              )}
+
+              <button
+                onClick={confirmarAccionRuta}
+                style={styles.deliverButton}
+                disabled={guardando}
+              >
+                {guardando ? "GUARDANDO..." : "CONFIRMAR"}
+              </button>
+
+              <button
+                onClick={() => setAccionRuta(null)}
+                style={styles.secondaryActionButton}
+              >
+                CANCELAR
+              </button>
+            </div>
           </div>
         )}
+
       </div>
     </div>
   );
 }
+
 const styles = {
   page: {
     minHeight: "100vh",
@@ -1326,4 +1599,98 @@ const styles = {
     opacity: 0.85,
     marginTop: 6,
   },
+
+  miniButton: {
+    width: "100%",
+    padding: "10px",
+    borderRadius: 10,
+    border: "none",
+    background: "#2a2a2a",
+    color: "#fff",
+    fontWeight: "bold",
+    marginBottom: 12,
+    cursor: "pointer",
+  },
+
+  tabs: {
+  display: "flex",
+  gap: 10,
+  marginBottom: 16,
+},
+
+tabButton: {
+  flex: 1,
+  padding: "14px 12px",
+  borderRadius: 12,
+  border: "none",
+  background: "#2a2a2a",
+  color: "#fff",
+  fontWeight: "bold",
+  fontSize: 15,
+  cursor: "pointer",
+},
+
+tabButtonActive: {
+  background: "#ff7a00",
+  color: "#000",
+},
+
+routeActions: {
+  display: "grid",
+  gap: 10,
+  marginTop: 10,
+},
+
+deliverButton: {
+  width: "100%",
+  padding: "16px",
+  borderRadius: 12,
+  border: "none",
+  background: "#ff7a00",
+  color: "#000",
+  fontWeight: "bold",
+  fontSize: 16,
+  cursor: "pointer",
+},
+
+secondaryActionButton: {
+  width: "100%",
+  padding: "12px",
+  borderRadius: 10,
+  border: "none",
+  background: "#2a2a2a",
+  color: "#fff",
+  fontWeight: "bold",
+  cursor: "pointer",
+},
+
+modalOverlay: {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.75)",
+  zIndex: 9999,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 20,
+},
+
+modalBox: {
+  width: "100%",
+  maxWidth: 420,
+  background: "#1d1f27",
+  borderRadius: 16,
+  padding: 18,
+  display: "grid",
+  gap: 12,
+},
+
+textarea: {
+  width: "100%",
+  minHeight: 90,
+  padding: 12,
+  borderRadius: 10,
+  boxSizing: "border-box",
+  fontSize: 16,
+},
 };
