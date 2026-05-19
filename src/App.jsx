@@ -5,12 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 const GOOGLE_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbxhNBkssonVACbSDoNk0Ofxvm6b8rjvRVbkfysllRcgZ8Spx2UHTMEzpxEGWrchQgv5Sg/exec";
 
-const USUARIOS = [
-  { nombre: "Anto", pin: "1111" },
-  { nombre: "Enrique", pin: "2222" },
-  { nombre: "Elias", pin: "3333" },
-  { nombre: "Karlo", pin: "4444" },
-];
+const USUARIOS = [];
 
 const ESTADOS_MOTORIZADO = ["Empaquetado", "En ruta", "Entregado", "No entregado", "Reprogramado"];
 const ESTADOS_AGENCIA = ["Empaquetado", "En agencia"];
@@ -349,6 +344,8 @@ function AppInterna() {
   const [usuarioActivo, setUsuarioActivo] = useState(null);
   const [usuarioLogin, setUsuarioLogin] = useState("Anto");
   const [pin, setPin] = useState("");
+  const [usuarios, setUsuarios] = useState([]);
+  const [cargandoUsuarios, setCargandoUsuarios] = useState(true);
 
     const [splash, setSplash] = useState(true);
 
@@ -367,6 +364,30 @@ function AppInterna() {
   const [voucherNombre, setVoucherNombre] = useState("");
   const [observacion, setObservacion] = useState("");
   const [scannerActivo, setScannerActivo] = useState(false);
+
+  const cargarUsuarios = async () => {
+    try {
+      const res = await fetch(`${GOOGLE_SCRIPT_URL}?modo=usuarios`);
+      const data = await res.json();
+
+      if (data.ok) {
+        setUsuarios(data.usuarios || []);
+
+        if (data.usuarios?.length > 0) {
+          setUsuarioLogin(data.usuarios[0].nombre);
+        }
+      }
+    } catch (error) {
+      console.error(error);
+      setMensaje("❌ No se pudieron cargar usuarios");
+    }
+
+    setCargandoUsuarios(false);
+  };
+
+  useEffect(() => {
+    cargarUsuarios();
+  }, []);
 
   const [registros, setRegistros] = useState([]);
   const cargarHistorialDia = async (usuario) => {
@@ -498,9 +519,12 @@ const estadosDisponibles =
   const login = (e) => {
     e.preventDefault();
 
-    const usuario = USUARIOS.find(
-      (u) => u.nombre === usuarioLogin && u.pin === pin
-    );
+  const usuario = usuarios.find(
+    (u) =>
+      u.nombre === usuarioLogin &&
+      String(u.pin) === String(pin) &&
+      u.activo
+  );
 
     if (!usuario) {
       setMensaje("❌ PIN incorrecto");
@@ -525,18 +549,34 @@ const estadosDisponibles =
 const fechaRegistroMs = (r) => {
   const raw = String(r.registroReal || "").trim();
 
-  if (raw) {
-    const [fechaParte, horaParte = "00:00:00"] = raw.split(" ");
-    const [d, m, y] = fechaParte.split("/").map(Number);
-    const [hh = 0, mm = 0, ss = 0] = horaParte.split(":").map(Number);
+  if (!raw) return 0;
 
-    if (d && m && y) {
-      return new Date(y, m - 1, d, hh, mm, ss).getTime();
-    }
-  }
+  const [fechaParte, horaParte = "00:00:00"] = raw.split(" ");
+  const [d, m, y] = fechaParte.split("/").map(Number);
+  const [hh = 0, mm = 0, ss = 0] = horaParte.split(":").map(Number);
 
-  return 0;
+  if (!d || !m || !y) return 0;
+
+  return new Date(y, m - 1, d, hh, mm, ss).getTime();
 };
+
+const registrosActuales = Object.values(
+  registros.reduce((acc, r, index) => {
+    const key = String(r.pedido || "").trim().toUpperCase();
+    if (!key) return acc;
+
+    const fechaActual = fechaRegistroMs(r) || index;
+    const fechaGuardada = acc[key]
+      ? fechaRegistroMs(acc[key]) || acc[key]._index || 0
+      : 0;
+
+    if (!acc[key] || fechaActual >= fechaGuardada) {
+      acc[key] = { ...r, _index: index };
+    }
+
+    return acc;
+  }, {})
+);
 
 const registrosUnicos = registrosActuales.filter((r) => {
   const asignado = String(r.asignadoA || "").trim();
@@ -939,6 +979,8 @@ const confirmarAccionRuta = async () => {
         <div style={styles.card}>
           <h1 style={styles.title}>🔐 Despacho Achorao</h1>
 
+          {cargandoUsuarios && <p>Cargando usuarios...</p>}
+
           <form onSubmit={login}>
             <label style={styles.label}>Usuario</label>
             <select
@@ -946,7 +988,9 @@ const confirmarAccionRuta = async () => {
               onChange={(e) => setUsuarioLogin(e.target.value)}
               style={styles.select}
             >
-              {USUARIOS.map((u) => (
+              {usuarios
+              .filter((u) => u.rol === "repartidor")
+              .map((u) => (
                 <option key={u.nombre} value={u.nombre}>
                   {u.nombre}
                 </option>
