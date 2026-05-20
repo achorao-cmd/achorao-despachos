@@ -824,9 +824,7 @@ const contadorMiRuta = registrosActuales.filter(
 
   // AGENCIA / MOTORIZADO
   if (estadoActual === "Empaquetado") {
-    return tipoEnvio === "Agencia"
-      ? "En agencia"
-      : "En ruta";
+    return "En ruta";
   }
 
   if (estadoActual === "En ruta")
