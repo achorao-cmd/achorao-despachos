@@ -193,7 +193,28 @@ function TrackingCliente() {
     </div>
   );
 }
-function PanelAdmin() {
+
+const fechaRegistroMs = (r) => {
+  const raw = r?.registroReal;
+
+  if (!raw) return 0;
+
+  if (raw instanceof Date) return raw.getTime();
+
+  const iso = Date.parse(raw);
+  if (!Number.isNaN(iso)) return iso;
+
+  const texto = String(raw).trim();
+  const [fechaParte, horaParte = "00:00:00"] = texto.split(" ");
+  const [d, m, y] = fechaParte.split("/").map(Number);
+  const [hh = 0, mm = 0, ss = 0] = horaParte.split(":").map(Number);
+
+  if (!d || !m || !y) return 0;
+
+  return new Date(y, m - 1, d, hh, mm, ss).getTime();
+};
+
+function PanelAdmin({ onLogout }) {
   const [registros, setRegistros] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [busqueda, setBusqueda] = useState("");
@@ -235,10 +256,8 @@ function PanelAdmin() {
     const key = String(r.pedido || "").trim().toUpperCase();
     if (!key) return acc;
 
-    const fechaActual = fechaRegistroMs(r) || index;
-    const fechaGuardada = acc[key]
-      ? fechaRegistroMs(acc[key]) || acc[key]._index || 0
-      : 0;
+    const fechaActual = fechaRegistroMs(r);
+    const fechaGuardada = acc[key] ? fechaRegistroMs(acc[key]) : 0;
 
     if (!acc[key] || fechaActual >= fechaGuardada) {
       acc[key] = { ...r, _index: index };
@@ -248,10 +267,28 @@ function PanelAdmin() {
   }, {})
 );
 
+const registrosActualesFiltrados = registrosActuales.filter((r) => {
+  const texto = `${r.pedido} ${r.motorizado} ${r.estado} ${r.agencia}`.toLowerCase();
+
+  const coincideBusqueda = texto.includes(busqueda.toLowerCase());
+  const coincideMotorizado = !filtroMotorizado || r.motorizado === filtroMotorizado;
+  const coincideEstado = !filtroEstado || r.estado === filtroEstado;
+
+  return coincideBusqueda && coincideMotorizado && coincideEstado;
+});
+
   return (
     <div style={styles.page}>
       <div style={styles.card}>
         <h1 style={styles.title}>📊 Panel Admin</h1>
+
+        {onLogout && (
+          <div style={{ marginBottom: 16 }}>
+            <button onClick={onLogout} style={styles.logout}>
+              Cerrar sesión
+            </button>
+          </div>
+        )}
 
         <button onClick={cargarAdmin} style={styles.bigButton} disabled={cargando}>
           {cargando ? "Actualizando..." : "Actualizar"}
@@ -270,12 +307,15 @@ function PanelAdmin() {
           style={styles.select}
         >
           <option value="">Todos los motorizados</option>
-          {USUARIOS.map((u) => (
-            <option key={u.nombre} value={u.nombre}>
-              {u.nombre}
-            </option>
-          ))}
-        </select>
+          {registrosActuales
+            .map((r) => r.motorizado)
+            .filter((m, i, arr) => m && arr.indexOf(m) === i)
+            .map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+       </select>
 
         <select
           value={filtroEstado}
@@ -295,10 +335,10 @@ function PanelAdmin() {
           <p>Cargando registros...</p>
         ) : (
           <>
-            <h3>Pedidos actuales: {registrosActuales.length}</h3>
+            <h3>Pedidos actuales: {registrosActualesFiltrados.length}</h3>
 
             <div style={styles.list}>
-              {registrosActuales.map((r, i) => (
+              {registrosActualesFiltrados.map((r, i) => (
                 <div key={i} style={styles.adminItem}>
                   <div style={styles.adminTop}>
                     <strong style={styles.adminPedido}>Pedido: {String(r.pedido || "").slice(0, 18)}</strong>
@@ -342,6 +382,8 @@ function limpiarCodigoPedido(valor) {
 }
 function AppInterna() {
   const [usuarioActivo, setUsuarioActivo] = useState(null);
+  const [tipoAcceso, setTipoAcceso] = useState(null);
+  const [rolActivo, setRolActivo] = useState(null);
   const [usuarioLogin, setUsuarioLogin] = useState("Anto");
   const [pin, setPin] = useState("");
   const [usuarios, setUsuarios] = useState([]);
@@ -387,6 +429,32 @@ function AppInterna() {
 
   useEffect(() => {
     cargarUsuarios();
+  }, []);
+
+  useEffect(() => {
+    if (!tipoAcceso || usuarios.length === 0) return;
+
+    const primerUsuario = usuarios.find(
+      (u) => String(u.rol).toLowerCase() === tipoAcceso
+    );
+
+    if (primerUsuario) {
+      setUsuarioLogin(primerUsuario.nombre);
+    }
+  }, [tipoAcceso, usuarios]);
+
+  useEffect(() => {
+    const sesionGuardada = localStorage.getItem("achoraoSesion");
+
+    if (sesionGuardada) {
+      const sesion = JSON.parse(sesionGuardada);
+
+      setUsuarioActivo(sesion.nombre);
+      setRolActivo(sesion.rol);
+      setTipoAcceso(sesion.rol);
+
+      cargarHistorialDia(sesion.nombre);
+    }
   }, []);
 
   const [registros, setRegistros] = useState([]);
@@ -499,7 +567,10 @@ const estadosDisponibles =
 }, [estado]);
 
   const cerrarSesion = () => {
+    localStorage.removeItem("achoraoSesion");
     setUsuarioActivo(null);
+    setRolActivo(null);
+    setTipoAcceso(null);
     setPin("");
     setPedido("");
     setMensaje("🔒 Sesión cerrada por seguridad");
@@ -522,7 +593,8 @@ const estadosDisponibles =
   const usuario = usuarios.find(
     (u) =>
       u.nombre === usuarioLogin &&
-      String(u.pin) === String(pin) &&
+      String(u.pin).trim() === String(pin).trim() &&
+      String(u.rol).toLowerCase() === tipoAcceso &&
       u.activo
   );
 
@@ -532,6 +604,14 @@ const estadosDisponibles =
     }
 
     setUsuarioActivo(usuario.nombre);
+    setRolActivo(usuario.rol);
+    localStorage.setItem(
+      "achoraoSesion",
+      JSON.stringify({
+        nombre: usuario.nombre,
+        rol: usuario.rol,
+      })
+    );
     cargarHistorialDia(usuario.nombre);
     setPin("");
     setMensaje(`✅ Sesión iniciada: ${usuario.nombre}`);
@@ -546,29 +626,13 @@ const estadosDisponibles =
   const esGarantiaPedido = (valor) =>
   String(valor || "").toUpperCase().includes("GARANT");
 
-const fechaRegistroMs = (r) => {
-  const raw = String(r.registroReal || "").trim();
-
-  if (!raw) return 0;
-
-  const [fechaParte, horaParte = "00:00:00"] = raw.split(" ");
-  const [d, m, y] = fechaParte.split("/").map(Number);
-  const [hh = 0, mm = 0, ss = 0] = horaParte.split(":").map(Number);
-
-  if (!d || !m || !y) return 0;
-
-  return new Date(y, m - 1, d, hh, mm, ss).getTime();
-};
-
 const registrosActuales = Object.values(
   registros.reduce((acc, r, index) => {
     const key = String(r.pedido || "").trim().toUpperCase();
     if (!key) return acc;
 
-    const fechaActual = fechaRegistroMs(r) || index;
-    const fechaGuardada = acc[key]
-      ? fechaRegistroMs(acc[key]) || acc[key]._index || 0
-      : 0;
+    const fechaActual = fechaRegistroMs(r);
+    const fechaGuardada = acc[key] ? fechaRegistroMs(acc[key]) : 0;
 
     if (!acc[key] || fechaActual >= fechaGuardada) {
       acc[key] = { ...r, _index: index };
@@ -582,6 +646,7 @@ const registrosUnicos = registrosActuales.filter((r) => {
   const asignado = String(r.asignadoA || "").trim();
 
   if (vista === "tomar") {
+    // Solo aparece si su ÚLTIMO estado real es "Empaquetado" y nadie lo tiene asignado
     return (
       r.estado === "Empaquetado" &&
       !asignado &&
@@ -590,15 +655,12 @@ const registrosUnicos = registrosActuales.filter((r) => {
   }
 
   if (vista === "mios") {
+    // Solo aparece en tu ruta si su ÚLTIMO estado real sigue siendo "En ruta"
     return asignado === usuarioActivo && r.estado === "En ruta";
   }
 
   return true;
-}).filter((r) =>
-  String(r.pedido || "")
-    .toLowerCase()
-    .includes(busqueda.toLowerCase())
-);
+});
 
 const contadorDisponibles = registrosActuales.filter(
   (r) =>
@@ -973,50 +1035,92 @@ const confirmarAccionRuta = async () => {
       );
     }
 
-    if (!usuarioActivo) {
-    return (
-      <div style={styles.page}>
-        <div style={styles.card}>
-          <h1 style={styles.title}>🔐 Despacho Achorao</h1>
+    if (rolActivo === "admin") {
+      return <PanelAdmin onLogout={cerrarSesion} />;
+    }
 
-          {cargandoUsuarios && <p>Cargando usuarios...</p>}
+    if (!usuarioActivo && !tipoAcceso) {
+  return (
+    <div style={styles.page}>
+      <div style={styles.card}>
+        <h1 style={styles.title}>🚚 Tracking Achorao</h1>
 
-          <form onSubmit={login}>
-            <label style={styles.label}>Usuario</label>
-            <select
-              value={usuarioLogin}
-              onChange={(e) => setUsuarioLogin(e.target.value)}
-              style={styles.select}
-            >
-              {usuarios
-              .filter((u) => u.rol === "repartidor")
+        <button
+          style={styles.botonGrande}
+          onClick={() => setTipoAcceso("repartidor")}
+        >
+          🛵 Repartidor
+        </button>
+
+        <button
+          style={{
+            ...styles.botonGrande,
+            background: "#ff8800",
+            marginTop: 12,
+          }}
+          onClick={() => setTipoAcceso("admin")}
+        >
+          📊 Administrador
+        </button>
+      </div>
+    </div>
+  );
+}
+
+if (!usuarioActivo) {
+  return (
+    <div style={styles.page}>
+      <div style={styles.card}>
+        <h1 style={styles.title}>🔐 Despacho Achorao</h1>
+
+        {cargandoUsuarios && <p>Cargando usuarios...</p>}
+
+        <form onSubmit={login}>
+          <label style={styles.label}>Usuario</label>
+
+          <select
+            value={usuarioLogin}
+            onChange={(e) => setUsuarioLogin(e.target.value)}
+            style={styles.select}
+          >
+            {usuarios
+              .filter((u) => u.rol === tipoAcceso)
               .map((u) => (
                 <option key={u.nombre} value={u.nombre}>
                   {u.nombre}
                 </option>
               ))}
-            </select>
+          </select>
 
-            <label style={styles.label}>PIN</label>
-            <input
-              type="password"
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-              placeholder="Ingresa tu PIN"
-              style={styles.input}
-              autoFocus
-              inputMode="numeric"
-              pattern="[0-9]*"
-            />
+          <label style={styles.label}>PIN</label>
 
-            <button style={styles.bigButton}>INGRESAR</button>
-          </form>
+          <input
+            type="password"
+            value={pin}
+            onChange={(e) =>
+              setPin(e.target.value.replace(/\D/g, ""))
+            }
+            placeholder="Ingresa tu PIN"
+            style={styles.input}
+            autoFocus
+            inputMode="numeric"
+            pattern="[0-9]*"
+          />
 
-          {mensaje && <div style={styles.message}>{mensaje}</div>}
-        </div>
+          <button style={styles.bigButton}>
+            INGRESAR
+          </button>
+        </form>
+
+        {mensaje && (
+          <div style={styles.message}>
+            {mensaje}
+          </div>
+        )}
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   return (
     <div style={styles.page} onClick={reiniciarTimer} onKeyDown={reiniciarTimer}>
@@ -1767,5 +1871,17 @@ splash: {
 splashLogo: {
   fontSize: 64,
   marginBottom: 12,
+},
+
+botonGrande: {
+  width: "100%",
+  padding: 18,
+  borderRadius: 14,
+  border: "none",
+  fontSize: 22,
+  fontWeight: "bold",
+  cursor: "pointer",
+  background: "#1f1f1f",
+  color: "#fff",
 },
 };
