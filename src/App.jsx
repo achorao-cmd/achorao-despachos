@@ -646,11 +646,9 @@ const registrosUnicos = registrosActuales.filter((r) => {
   const asignado = String(r.asignadoA || "").trim();
 
   if (vista === "tomar") {
-    // Solo aparece si su ÚLTIMO estado real es "Empaquetado" y nadie lo tiene asignado
     return (
       r.estado === "Empaquetado" &&
-      !asignado &&
-      !esGarantiaPedido(r.pedido)
+      !asignado
     );
   }
 
@@ -665,8 +663,7 @@ const registrosUnicos = registrosActuales.filter((r) => {
 const contadorDisponibles = registrosActuales.filter(
   (r) =>
     r.estado === "Empaquetado" &&
-    !String(r.asignadoA || "").trim() &&
-    !esGarantiaPedido(r.pedido)
+    !String(r.asignadoA || "").trim()
 ).length;
 
 const contadorMiRuta = registrosActuales.filter(
@@ -777,21 +774,22 @@ const contadorMiRuta = registrosActuales.filter(
 
     setGuardando(true);
 
+    setRegistros((prev) => [nuevoRegistro, ...prev]);
+    setMensaje(`✅ ${pedidoLimpio} guardado como "${estadoDirecto}"`);
+    setFlashOk(true);
+
+    setTimeout(() => {
+      setFlashOk(false);
+    }, 1000);
+
+    setPedido("");
+
     try {
       await fetch(GOOGLE_SCRIPT_URL, {
         method: "POST",
         mode: "no-cors",
         body: JSON.stringify(nuevoRegistro),
       });
-
-      setRegistros([nuevoRegistro, ...registros]);
-      setMensaje(`✅ ${pedidoLimpio} guardado como "${estado}"`);
-      setFlashOk(true);
-
-      setTimeout(() => {
-        setFlashOk(false);
-      }, 1000);
-      limpiarCampos();
     } catch (error) {
       console.error(error);
       setMensaje("❌ Error al guardar en Google Sheets");
@@ -968,21 +966,22 @@ const confirmarAccionRuta = async () => {
 
     setGuardando(true);
 
+    setRegistros((prev) => [nuevoRegistro, ...prev]);
+    setMensaje(`✅ ${pedidoLimpio} guardado como "${estado}"`);
+    setFlashOk(true);
+
+    setTimeout(() => {
+      setFlashOk(false);
+    }, 1000);
+
+    setPedido("");
+
     try {
       await fetch(GOOGLE_SCRIPT_URL, {
         method: "POST",
         mode: "no-cors",
         body: JSON.stringify(nuevoRegistro),
       });
-
-      setRegistros([nuevoRegistro, ...registros]);
-      setMensaje(`✅ ${pedidoLimpio} guardado como "${estadoDirecto}"`);
-      setFlashOk(true);
-
-      setTimeout(() => {
-        setFlashOk(false);
-      }, 1000);
-      setPedido("");
     } catch (error) {
       console.error(error);
       setMensaje("❌ Error al guardar en Google Sheets");
@@ -1072,6 +1071,19 @@ if (!usuarioActivo) {
     <div style={styles.page}>
       <div style={styles.card}>
         <h1 style={styles.title}>🔐 Despacho Achorao</h1>
+
+        <button
+          type="button"
+          onClick={() => {
+            setTipoAcceso(null);
+            setUsuarioLogin("");
+            setPin("");
+            setMensaje("");
+          }}
+          style={{ ...styles.logout, marginBottom: 16 }}
+        >
+          ← Cambiar tipo de acceso
+        </button>
 
         {cargandoUsuarios && <p>Cargando usuarios...</p>}
 
