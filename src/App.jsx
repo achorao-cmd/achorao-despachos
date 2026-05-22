@@ -774,9 +774,8 @@ const contadorMiRuta = registrosActuales.filter(
 
     setGuardando(true);
 
-    setRegistros((prev) => [nuevoRegistro, ...prev]);
-    setMensaje(`✅ ${pedidoLimpio} guardado como "${estadoDirecto}"`);
-    setFlashOk(true);
+    setMensaje("⏳ Guardando garantía/pedido...");
+    setFlashOk(false);
 
     setTimeout(() => {
       setFlashOk(false);
@@ -983,6 +982,9 @@ const confirmarAccionRuta = async () => {
         body: JSON.stringify(nuevoRegistro),
       });
       await cargarHistorialDia(usuarioActivo);
+      setMensaje(`✅ ${pedidoLimpio} guardado como "${estadoDirecto}"`);
+      setFlashOk(true);
+      limpiarCampos();
     } catch (error) {
       console.error(error);
       setMensaje("❌ Error al guardar en Google Sheets");
@@ -1235,13 +1237,15 @@ if (!usuarioActivo) {
       style={{ ...styles.input, flex: 1 }}
     />
 
-    <button
-      type="button"
-      onClick={(e) => registrar(e)}
-      style={styles.sendButton}
-    >
-      ➜
-    </button>
+    {tipoEnvio !== "Garantía" && (
+      <button
+        type="button"
+        onClick={(e) => registrar(e)}
+        style={styles.sendButton}
+      >
+        ➜
+      </button>
+    )}
   </div>
 
   {scannerActivo && (
