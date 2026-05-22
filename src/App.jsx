@@ -805,7 +805,7 @@ const contadorMiRuta = registrosActuales.filter(
   if (tipoEnvio === "Garantía") {
 
     if (estadoActual === "Empaquetado")
-      return "En proveedor";
+      return "En ruta";
 
     if (estadoActual === "En proveedor")
       return "En revisión";
@@ -985,6 +985,7 @@ const confirmarAccionRuta = async () => {
       setMensaje(`✅ ${pedidoLimpio} guardado como "${estadoDirecto}"`);
       setFlashOk(true);
       limpiarCampos();
+      setGuardando(false);
     } catch (error) {
       console.error(error);
       setMensaje("❌ Error al guardar en Google Sheets");
