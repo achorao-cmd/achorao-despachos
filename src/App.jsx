@@ -790,6 +790,7 @@ const contadorMiRuta = registrosActuales.filter(
         mode: "no-cors",
         body: JSON.stringify(nuevoRegistro),
       });
+      await cargarHistorialDia(usuarioActivo);
     } catch (error) {
       console.error(error);
       setMensaje("❌ Error al guardar en Google Sheets");
@@ -922,6 +923,7 @@ const confirmarAccionRuta = async () => {
     setModalObs("");
     setVoucherBase64("");
     setVoucherNombre("");
+    await cargarHistorialDia(usuarioActivo);
   } finally {
     setGuardando(false);
   }
@@ -980,6 +982,7 @@ const confirmarAccionRuta = async () => {
         mode: "no-cors",
         body: JSON.stringify(nuevoRegistro),
       });
+      await cargarHistorialDia(usuarioActivo);
     } catch (error) {
       console.error(error);
       setMensaje("❌ Error al guardar en Google Sheets");
@@ -1410,8 +1413,8 @@ if (!usuarioActivo) {
               type="button"
               onClick={() => {
                 if (siguienteEstado(r.estado) === "En ruta") {
-                  registrarPedidoDirecto(r.pedido, "En ruta", usuarioActivo);
                   setVista("mios");
+                  registrarPedidoDirecto(r.pedido, "En ruta", usuarioActivo);
                   return;
                 }
 
