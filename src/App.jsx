@@ -761,7 +761,7 @@ const contadorMiRuta = registrosActuales.filter(
       setMensaje("⚠️ Falta escanear el QR de Shalom");
       return;
     }
-    
+
     if (requiereFoto && !voucherURL.trim() && !voucherBase64) {
       setMensaje("Sube una foto/evidencia antes de registrar.");
       return;
@@ -793,9 +793,10 @@ const contadorMiRuta = registrosActuales.filter(
       shalomQrRaw: shalomQrRaw.trim(),
     };
 
-    setGuardando(true);
+    if (guardando) return;
 
-    setMensaje("⏳ Guardando garantía/pedido...");
+    setGuardando(true);
+    setMensaje("⏳ Guardando pedido...");
     setFlashOk(false);
 
     setTimeout(() => {
@@ -810,17 +811,24 @@ const contadorMiRuta = registrosActuales.filter(
         mode: "no-cors",
         body: JSON.stringify(nuevoRegistro),
       });
+
       await cargarHistorialDia(usuarioActivo);
+
+      setMensaje(`✅ ${pedidoLimpio} guardado como "${estado}"`);
+      setFlashOk(true);
+      limpiarCampos();
+
+      setTimeout(() => {
+        setMensaje("");
+        setFlashOk(false);
+      }, 1800);
     } catch (error) {
       console.error(error);
       setMensaje("❌ Error al guardar en Google Sheets");
+    } finally {
+      setGuardando(false);
+      setTimeout(() => inputRef.current?.focus(), 100);
     }
-
-    setGuardando(false);
-    setTimeout(() => inputRef.current?.focus(), 100);
-  };
-
-  const siguienteEstado = (estadoActual) => {
 
   // GARANTÍAS
   if (tipoEnvio === "Garantía") {
