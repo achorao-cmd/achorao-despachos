@@ -380,6 +380,13 @@ function limpiarCodigoPedido(valor) {
 
   return texto.replace("#", "").trim().toUpperCase();
 }
+
+function extraerOseIdShalom(valor) {
+  const texto = String(valor || "").trim();
+  const match = texto.match(/(\d+)\/document\/1\/?/);
+  return match ? match[1] : "";
+}
+
 function AppInterna() {
   const [usuarioActivo, setUsuarioActivo] = useState(null);
   const [tipoAcceso, setTipoAcceso] = useState(null);
@@ -401,6 +408,8 @@ function AppInterna() {
   const [tipoEnvio, setTipoEnvio] = useState("Motorizado");
   const [agencia, setAgencia] = useState("");
   const [codigoRecojo, setCodigoRecojo] = useState("");
+  const [shalomOseId, setShalomOseId] = useState("");
+  const [shalomQrRaw, setShalomQrRaw] = useState("");
   const [voucherURL, setVoucherURL] = useState("");
   const [voucherBase64, setVoucherBase64] = useState("");
   const [voucherNombre, setVoucherNombre] = useState("");
@@ -560,6 +569,8 @@ const estadosDisponibles =
   if (estado !== "En agencia") {
     setAgencia("");
     setCodigoRecojo("");
+    setShalomOseId("");
+    setShalomQrRaw("");
     setVoucherURL("");
     setVoucherBase64("");
     setVoucherNombre("");
@@ -676,6 +687,8 @@ const contadorMiRuta = registrosActuales.filter(
     setPedido("");
     setAgencia("");
     setCodigoRecojo("");
+    setShalomOseId("");
+    setShalomQrRaw("");
     setVoucherURL("");
     setVoucherBase64("");
     setVoucherNombre("");
@@ -743,6 +756,12 @@ const contadorMiRuta = registrosActuales.filter(
       setMensaje("⚠️ Falta el código de recojo");
       return;
     }
+
+    if (esAgencia && agencia === "Shalom" && !shalomOseId.trim()) {
+      setMensaje("⚠️ Falta escanear el QR de Shalom");
+      return;
+    }
+    
     if (requiereFoto && !voucherURL.trim() && !voucherBase64) {
       setMensaje("Sube una foto/evidencia antes de registrar.");
       return;
@@ -770,6 +789,8 @@ const contadorMiRuta = registrosActuales.filter(
         : "",
       observacion: observacion.trim(),
       asignadoA: "",
+      shalomOseId: shalomOseId.trim(),
+      shalomQrRaw: shalomQrRaw.trim(),
     };
 
     setGuardando(true);
@@ -961,6 +982,8 @@ const confirmarAccionRuta = async () => {
       voucherNombre: extra.voucherNombre || "",
       observacion: extra.observacion || "",
       asignadoA: asignadoA || "",
+      shalomOseId: shalomOseId.trim(),
+      shalomQrRaw: shalomQrRaw.trim(),
     };
 
     setGuardando(true);
@@ -1027,6 +1050,43 @@ const confirmarAccionRuta = async () => {
         );
       }, 100);
     };
+
+    const iniciarScannerShalom = () => {
+  setScannerActivo(true);
+
+  setTimeout(() => {
+    const scanner = new Html5QrcodeScanner(
+      "reader",
+      {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        videoConstraints: {
+          facingMode: { ideal: "environment" },
+        },
+      },
+      false
+    );
+
+    scanner.render(
+      async (decodedText) => {
+        const oseId = extraerOseIdShalom(decodedText);
+
+        if (!oseId) {
+          setMensaje("⚠️ QR de Shalom no válido");
+          return;
+        }
+
+        setShalomQrRaw(decodedText);
+        setShalomOseId(oseId);
+        setMensaje(`✅ QR Shalom leído: OSE ID ${oseId}`);
+
+        setScannerActivo(false);
+        scanner.clear();
+      },
+      () => {}
+    );
+  }, 100);
+};
 
     if (splash) {
       return (
@@ -1289,6 +1349,33 @@ if (!usuarioActivo) {
       />
     </>
   )}
+
+  {agencia === "Shalom" && (
+  <>
+    <input
+      value={shalomOseId}
+      onChange={(e) => setShalomOseId(e.target.value.replace(/\D/g, ""))}
+      placeholder="OSE ID Shalom"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      style={styles.input}
+    />
+
+    <button
+      type="button"
+      onClick={iniciarScannerShalom}
+      style={styles.bigButton}
+    >
+      ESCANEAR QR SHALOM
+    </button>
+
+    {shalomQrRaw && (
+      <div style={styles.fileOk}>
+        ✅ QR Shalom leído: {shalomQrRaw}
+      </div>
+    )}
+  </>
+)}
 
   {tipoEnvio === "Garantía" && estado === "Empaquetado" && (
   <>
